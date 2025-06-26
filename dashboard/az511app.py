@@ -111,11 +111,24 @@ class TomTomDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             query = """
-                SELECT id, coordinate_lat, coordinate_lon, currentSpeed, 
-                       freeFlowSpeed, currentTravelTime, freeFlowTravelTime,
-                       confidence, roadClosure, coordinates, timestamp, 
-                       frc, version
-                FROM traffic_flow
+                SELECT 
+                    td.id, 
+                    rs.coordinate_lat, 
+                    rs.coordinate_lon, 
+                    td.currentSpeed, 
+                    td.freeFlowSpeed, 
+                    td.currentTravelTime, 
+                    td.freeFlowTravelTime,
+                    td.confidence, 
+                    td.roadClosure, 
+                    rs.coordinates, 
+                    td.timestamp, 
+                    rs.frc, 
+                    td.version,
+                    rs.segment_id,
+                    rs.openlr
+                FROM traffic_data td
+                INNER JOIN road_segments rs ON td.segment_id = rs.segment_id
             """
             params = []
             conditions = []
@@ -126,15 +139,15 @@ class TomTomDB:
             
             if frc_filter:
                 placeholders = ','.join('?' * len(frc_filter))
-                conditions.append(f"frc IN ({placeholders})")
+                conditions.append(f"rs.frc IN ({placeholders})")
                 params.extend(frc_filter)
             
             if city and city in CITY_COORDS:
                 # Add 0.1 degree radius around city center (roughly 11km)
                 center = CITY_COORDS[city]
                 conditions.extend([
-                    "coordinate_lat BETWEEN ? AND ?",
-                    "coordinate_lon BETWEEN ? AND ?"
+                    "rs.coordinate_lat BETWEEN ? AND ?",
+                    "rs.coordinate_lon BETWEEN ? AND ?"
                 ])
                 params.extend([
                     center['lat'] - 0.1, center['lat'] + 0.1,
@@ -146,7 +159,7 @@ class TomTomDB:
             
             # Prioritize higher importance roads (FRC0, FRC1) and limit results for performance
             query += """ ORDER BY 
-                CASE frc 
+                CASE rs.frc 
                     WHEN 'FRC0' THEN 0 
                     WHEN 'FRC1' THEN 1 
                     WHEN 'FRC2' THEN 2 
@@ -155,7 +168,7 @@ class TomTomDB:
                     WHEN 'FRC5' THEN 5 
                     WHEN 'FRC6' THEN 6 
                     ELSE 7 
-                END, id
+                END, td.timestamp DESC, td.id
             """
             
             # Apply smart limiting based on FRC types to improve performance
@@ -170,21 +183,33 @@ class TomTomDB:
     def get_database_summary(self):
         """Get summary statistics for TomTom database"""
         with sqlite3.connect(self.db_path) as conn:
-            # Get total number of traffic flow records
-            total_flow = pd.read_sql_query("SELECT COUNT(*) as count FROM traffic_flow", conn).iloc[0]['count']
+            # Get total number of traffic data records and road segments
+            traffic_count = pd.read_sql_query("SELECT COUNT(*) as count FROM traffic_data", conn).iloc[0]['count']
+            segments_count = pd.read_sql_query("SELECT COUNT(*) as count FROM road_segments", conn).iloc[0]['count']
             
-            # Get time range 
-            time_range = pd.read_sql_query("""
-                SELECT 
-                    datetime(MIN(timestamp), 'unixepoch') as earliest,
-                    datetime(MAX(timestamp), 'unixepoch') as latest 
-                FROM traffic_flow
-            """, conn)
+            # Get FRC distribution from road_segments
+            frc_distribution = pd.read_sql_query("SELECT frc, COUNT(*) as count FROM road_segments GROUP BY frc ORDER BY frc", conn)
+            
+            # Get time range from traffic_data
+            if traffic_count > 0:
+                time_range = pd.read_sql_query("""
+                    SELECT 
+                        datetime(MIN(timestamp), 'unixepoch') as earliest,
+                        datetime(MAX(timestamp), 'unixepoch') as latest 
+                    FROM traffic_data
+                """, conn)
+                earliest = time_range['earliest'].iloc[0]
+                latest = time_range['latest'].iloc[0]
+            else:
+                earliest = None
+                latest = None
             
             return {
-                'total_flow': total_flow,
-                'earliest': time_range['earliest'].iloc[0] if total_flow > 0 else None,
-                'latest': time_range['latest'].iloc[0] if total_flow > 0 else None
+                'total_flow': traffic_count,
+                'total_segments': segments_count,
+                'frc_distribution': frc_distribution,
+                'earliest': earliest,
+                'latest': latest
             }
 
 def add_optimized_traffic_flow(fig, tomtom_data):
@@ -289,6 +314,71 @@ def add_optimized_traffic_flow(fig, tomtom_data):
                 legendgroup=frc  # Group all traces of same FRC together
             ))
 
+def add_geojson_roads(fig):
+    """Add Arizona road networks from GeoJSON files as separate layers"""
+    database_dir = Path(__file__).parent.parent / "database"
+    
+    # Define GeoJSON files and their display properties
+    geojson_files = {
+        'az_interstates.geojson': {
+            'name': 'Arizona Interstates',
+            'color': '#2E86AB',  # Blue
+            'width': 4,
+            'opacity': 0.8
+        },
+        'az_sr.geojson': {
+            'name': 'Arizona State Routes', 
+            'color': '#A23B72',  # Purple
+            'width': 2,
+            'opacity': 0.6
+        }
+    }
+    
+    for filename, properties in geojson_files.items():
+        geojson_path = database_dir / filename
+        
+        try:
+            if geojson_path.exists():
+                with open(geojson_path, 'r') as f:
+                    geojson_data = json.load(f)
+                
+                # Extract coordinates from all LineString features
+                all_lats = []
+                all_lons = []
+                
+                for feature in geojson_data['features']:
+                    if feature['geometry']['type'] == 'LineString':
+                        coords = feature['geometry']['coordinates']
+                        # GeoJSON coordinates are [longitude, latitude]
+                        lons = [coord[0] for coord in coords]
+                        lats = [coord[1] for coord in coords]
+                        
+                        # Add coordinates to lists with None separator for multiple lines
+                        all_lons.extend(lons + [None])
+                        all_lats.extend(lats + [None])
+                
+                # Add the road network as a single trace
+                if all_lats and all_lons:
+                    fig.add_trace(go.Scattermap(
+                        lat=all_lats,
+                        lon=all_lons,
+                        mode='lines',
+                        line=dict(
+                            width=properties['width'],
+                            color=properties['color']
+                        ),
+                        opacity=properties['opacity'],
+                        name=properties['name'],
+                        hovertemplate=f"<b>{properties['name']}</b><br>" +
+                                    "Location: (%{lat:.4f}, %{lon:.4f})<extra></extra>",
+                        showlegend=True,
+                        legendgroup='roads'  # Group road layers together
+                    ))
+                    
+        except Exception as e:
+            st.warning(f"Could not load {filename}: {str(e)}")
+            continue
+
 def main():
     st.title("Arizona Transportation Dashboard")
     
@@ -302,6 +392,7 @@ def main():
     # Data source selection with checkboxes
     show_az511 = st.sidebar.checkbox("Show AZ511 Work Zones", value=True, key="show_az511")
     show_tomtom = st.sidebar.checkbox("Show TomTom Traffic Flow", value=True, key="show_tomtom")
+    show_roads = st.sidebar.checkbox("Show Arizona Road Networks", value=True, key="show_roads")
     
     # TomTom FRC (road class) filter - only show if TomTom is enabled
     frc_filter = None
@@ -343,6 +434,18 @@ def main():
             st.sidebar.warning("⚠️ Local roads (FRC4+) may slow down map rendering. Limited to 1000 segments for performance.")
         
         frc_filter = selected_frcs if selected_frcs else None
+    
+    # Road networks info - only show if roads are enabled  
+    if show_roads:
+        st.sidebar.write("**Road Networks:**")
+        with st.sidebar.expander("ℹ️ About Road Networks"):
+            st.write("""
+            **Arizona Road Networks** from GeoJSON data:
+            - **Interstate Highways** (blue) - Major interstate routes
+            - **State Routes** (purple) - Arizona state highways
+            
+            *Road data sourced from Arizona Department of Transportation*
+            """)
     
     st.sidebar.subheader("Filter Options")
     
@@ -532,23 +635,7 @@ def main():
                     margin={"r":30,"t":30,"l":30,"b":50},
                     title=f"AZ511 Events - {selected_city} ({selected_date})"
                 )
-                # for event_type in az511_data['EventType'].unique():
-                #     event_data = az511_data[az511_data['EventType'] == event_type]
-                #     fig.add_trace(go.Scattermap(
-                #         lat=event_data['Latitude'],
-                #         lon=event_data['Longitude'],
-                #         mode='markers',
-                #         marker=dict(
-                #             size=[event_type_size.get(t, 1) * 10 for t in event_data['EventType']],
-                #             color=color_map.get(event_type, '#808080')
-                #         ),
-                #         text=event_data['Description'],
-                #         name=f'AZ511 - {event_type}',
-                #         hovertemplate="<b>%{text}</b><br>" +
-                #                      "Type: " + event_type + "<br>" +
-                #                      "Location: (%{lat}, %{lon})<extra></extra>"
-                #     )                )
-        
+
         # Add TomTom traffic flow data as lines (optimized)
         if show_tomtom and 'data_source' in df.columns:
             tomtom_data = df[df['data_source'] == 'TomTom']
@@ -556,7 +643,11 @@ def main():
                 # Add progress indicator
                 with st.spinner(f'Rendering {len(tomtom_data)} traffic segments...'):
                     add_optimized_traffic_flow(fig, tomtom_data)
-
+        
+        # Add Arizona road networks from GeoJSON files
+        if show_roads:
+            add_geojson_roads(fig)
+        
         # Update layout for mapbox - ensure it always centers on the specified location
         fig.update_layout(
             mapbox=dict(
@@ -565,13 +656,16 @@ def main():
                 center=map_center,
                 zoom=map_zoom
             ),
-            margin={"r":30,"t":30,"l":30,"b":50},
+            margin={"r":180,"t":30,"l":30,"b":50},  # Increased right margin for legend
             title=f"Transportation Data - {selected_city} ({selected_date})",
             legend=dict(
                 yanchor="top",
                 y=0.99,
                 xanchor="left",
-                x=0.01
+                x=1.02,  # Position legend to the right of the map
+                bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent white background
+                bordercolor="rgba(0,0,0,0.2)",
+                borderwidth=1
             ),
             height=600  # Set a fixed height to ensure proper rendering
         )
@@ -780,14 +874,26 @@ def main():
             if show_tomtom:
                 tomtom_summary = tomtom_db.get_database_summary()
                 displayed_segments = len([row for row in traffic_segments]) if 'traffic_segments' in locals() and traffic_segments else 0
-                st.metric("Displayed Traffic Segments", f"{displayed_segments} / {tomtom_summary['total_flow']}")
-                if frc_filter:
-                    st.write(f"**Filtered FRC:** {', '.join(frc_filter)}")
-                else:
-                    st.write("**Showing:** All road types")
+                
+                col2a, col2b = st.columns(2)
+                with col2a:
+                    st.metric("Traffic Records", f"{tomtom_summary['total_flow']}")
+                    st.metric("Road Segments", f"{tomtom_summary['total_segments']}")
+                with col2b:
+                    st.metric("Displayed", f"{displayed_segments}")
+                    if frc_filter:
+                        st.write(f"**Filtered:** {', '.join(frc_filter)}")
+                    else:
+                        st.write("**Default:** FRC0, FRC1")
+                
+                # Show FRC distribution
+                if 'frc_distribution' in tomtom_summary and not tomtom_summary['frc_distribution'].empty:
+                    st.write("**Road Class Distribution:**")
+                    for _, row in tomtom_summary['frc_distribution'].iterrows():
+                        st.write(f"  • {row['frc']}: {row['count']} segments")
+                
                 if tomtom_summary['earliest']:
-                    st.metric("Data Timestamp", 
-                             f"{tomtom_summary['earliest']} to {tomtom_summary['latest']}")
+                    st.write(f"**Data Range:** {tomtom_summary['earliest']} to {tomtom_summary['latest']}")
             else:
                 st.info("TomTom data not selected")
 
@@ -810,15 +916,53 @@ def main():
                     st.dataframe(tomtom_data.head(10))
 
     else:
-        st.warning("No data found for the selected sources and filters.")
-        if not show_az511 and not show_tomtom:
-            st.info("Please select at least one data source from the sidebar.")
+        # No AZ511 or TomTom data, but still show road networks if requested
+        if show_roads:
+            # Create a map with just the road networks
+            if city_filter:
+                center = CITY_COORDS[city_filter]
+                map_center = {"lat": center['lat'], "lon": center['lon']}
+                map_zoom = center['zoom']
+            else:
+                map_center = {"lat": 33.4484, "lon": -112.0740}  # Phoenix as default
+                map_zoom = 10
+            
+            fig = go.Figure()
+            add_geojson_roads(fig)
+            
+            # Update layout for mapbox
+            fig.update_layout(
+                mapbox=dict(
+                    style="open-street-map",
+                    center=map_center,
+                    zoom=map_zoom
+                ),
+                margin={"r":180,"t":30,"l":30,"b":50},  # Increased right margin for legend
+                title=f"Arizona Road Networks - {selected_city} ({selected_date})",
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=1.02,  # Position legend to the right of the map
+                    bgcolor="rgba(255,255,255,0.8)",  # Semi-transparent white background
+                    bordercolor="rgba(0,0,0,0.2)",
+                    borderwidth=1
+                ),
+                height=600
+            )
+            
+            # Display the map
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            st.code("""
-            # To populate databases, run:
-            # AZ511: python inrix/dashboard/az511.py
-            # TomTom: python inrix/dashboard/tomtom.py
-            """)
+            st.warning("No data found for the selected sources and filters.")
+            if not show_az511 and not show_tomtom:
+                st.info("Please select at least one data source from the sidebar.")
+            else:
+                st.code("""
+                # To populate databases, run:
+                # AZ511: python inrix/dashboard/az511.py
+                # TomTom: python inrix/dashboard/tomtom.py
+                """)
 
 if __name__ == "__main__":
     main()
