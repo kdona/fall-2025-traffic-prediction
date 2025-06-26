@@ -65,7 +65,7 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+_logs/
 
 # Temporary files
 *.tmp
