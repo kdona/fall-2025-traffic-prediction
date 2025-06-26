@@ -1,0 +1,19 @@
+name: inrix-dashboard
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pandas
+  - geopandas
+  - streamlit
+  - plotly
+  - confluent-kafka
+  - python-dotenv
+  - requests
+  - psycopg2
+  - sqlalchemy
+  - pip
+  - pytest
+  - pip:
+    - faust-streaming>=0.10.0
