@@ -1,3 +1,8 @@
+'''
+This script fetches traffic event data from the AZ511 API and stores it in a local SQLite database.
+It creates the database and table if they do not exist, and updates existing records based on event IDs.
+It uses environment variables for sensitive information like the API key.
+'''
 import os
 import requests
 import sqlite3
