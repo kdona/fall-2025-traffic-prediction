@@ -25,6 +25,7 @@ dist/
 downloads/
 eggs/
 .eggs/
+*inrix-traffic-speed/
 lib/
 lib64/
 parts/

@@ -1,6 +1,6 @@
 """
 Streamlit dashboard showing AZ511 work zones on a map
-Run: streamlit run inrix/dashboard/app.py
+Run: streamlit run dashboard/wzdxapp.py
 """
 import streamlit as st
 import plotly.express as px

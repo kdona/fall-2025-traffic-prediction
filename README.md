@@ -279,6 +279,10 @@ TABLE traffic_data (
 - **Update Frequency**: Real-time as events are reported
 - **Data Retention**: Historical events with start/end dates
 
+## Resources
+- AZ state routes: https://en.wikipedia.org/wiki/List_of_state_routes_in_Arizona#/map/0
+- geojson.io: https://geojson.io/#new&map=10.75/33.4155/-111.7815
+- TomTom developer: https://developer.tomtom.com/user/me/analytics
 ## Contributing
 
 1. Fork the repository
