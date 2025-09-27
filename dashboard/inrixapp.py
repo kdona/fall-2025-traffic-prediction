@@ -13,7 +13,6 @@ import seaborn as sns
 import os
 import glob
 from pathlib import Path
-from datetime import datetime, timedelta
 import calendar
 import json
 import time
@@ -33,6 +32,8 @@ class InrixData:
         self.target_chunk_size_mb = 100  # ~100MB for each chunk
         self.df_1y = None  # To store aggregated yearly data
         self.tmc_locations = None
+        # Add cache for map data to avoid recomputation
+        self._daily_map_cache = {}
         
         # Load TMC locations on initialization
         self.load_tmc_locations()
@@ -82,8 +83,7 @@ class InrixData:
         
         # Create directory if it doesn't exist
         os.makedirs(self.chunks_dir, exist_ok=True)
-        
-        start_time = time.time()
+
         chunk_files = []
         
         # Convert paths to strings for pandas
@@ -170,9 +170,7 @@ class InrixData:
             
             actual_file_size_mb = os.path.getsize(chunk_path) / (1024 * 1024)
             progress_text.text(f"Saved final chunk {chunk_idx}: {len(combined_chunk)} rows, {actual_file_size_mb:.2f} MB")
-        
-        elapsed_time = time.time() - start_time
-        progress_text.text(f"File splitting completed in {elapsed_time:.2f} seconds. Created {len(chunk_files)} chunk files")
+    
         
         return chunk_files
     
@@ -425,7 +423,7 @@ class InrixData:
         tmc_peak_diff = self.df_1y.groupby(['tmc', 'road', 'direction'], group_keys=False)\
             .apply(lambda x: pd.Series({
                 'peak_speed_drop': x[x['is_peak']]['speed_mean'].mean() - x[~x['is_peak']]['speed_mean'].mean()
-            }))\
+            }), include_groups=False)\
             .reset_index()
         
         # Sort by largest speed drop during peak hours
@@ -437,7 +435,7 @@ class InrixData:
             'tmc_peak_diff': tmc_peak_diff
         }
     
-    def get_tmc_map_data(self, year_week=None, selected_date=None):
+    def _get_tmc_map_data(self, year_week=None, selected_date=None):
         """Get TMC map data for visualization"""
         if self.df_1y is None or self.tmc_locations is None:
             return None
@@ -457,6 +455,113 @@ class InrixData:
                                  'end_latitude', 'end_longitude'], observed=True)['speed_mean'].mean().reset_index()
         
         return tmc_avg
+    
+    def get_tmc_map_data_optimized(self, selected_date=None):
+        """Optimized version that caches daily map data and uses views instead of copies"""
+        if self.df_1y is None or self.tmc_locations is None:
+            return None
+        
+        # Use a string representation of date for caching
+        cache_key = str(selected_date) if selected_date else "all_data"
+        
+        # Check if we already have this date cached
+        if cache_key in self._daily_map_cache:
+            return self._daily_map_cache[cache_key]
+        
+        # Filter data efficiently using query (faster than boolean indexing)
+        if selected_date:
+            # Use query for better performance on large datasets
+            df_filtered = self.df_1y.query('date == @selected_date')
+        else:
+            return None
+
+        # Group by TMC efficiently - only select needed columns first
+        required_cols = ['tmc', 'road', 'direction', 'start_latitude', 'start_longitude', 
+                        'end_latitude', 'end_longitude', 'speed_mean']
+        
+        # Use observed=True to avoid categorical warnings and improve performance
+        tmc_avg = (df_filtered[required_cols]
+                  .groupby('tmc', observed=True)
+                  .agg({
+                      'speed_mean': 'mean',
+                      'road': 'first',
+                      'direction': 'first', 
+                      'start_latitude': 'first',
+                      'start_longitude': 'first',
+                      'end_latitude': 'first',
+                      'end_longitude': 'first'
+                  })
+                  .reset_index())
+
+        # Add speed category efficiently using pd.cut
+        tmc_avg['speed_category'] = pd.cut(
+            tmc_avg['speed_mean'],
+            bins=[0, 20, 30, 40, 50, 60, 100],
+            labels=['0-20', '20-30', '30-40', '40-50', '50-60', '60+']
+        )
+
+        # Cache the result to avoid recomputation
+        self._daily_map_cache[cache_key] = tmc_avg
+        
+        # Limit cache size to prevent memory issues (keep last 30 days)
+        if len(self._daily_map_cache) > 30:
+            # Remove oldest entries
+            oldest_keys = list(self._daily_map_cache.keys())[:-30]
+            for key in oldest_keys:
+                del self._daily_map_cache[key]
+        
+        return tmc_avg
+    
+    def prepare_map_line_data(self, map_data):
+        """Prepare line data for map visualization without creating unnecessary copies"""
+        if map_data is None or map_data.empty:
+            return pd.DataFrame()
+        # Pre-calculate speed categories using numpy for vectorized operations
+        speeds = map_data['speed_mean'].values
+        speed_categories = np.select(
+            [speeds > 60, speeds > 50, speeds > 40, speeds > 30, speeds > 20],
+            ['60+', '50-60', '40-50', '30-40', '20-30'],
+            default='0-20'
+        )
+        
+        # Create segment labels vectorized
+        segment_labels = map_data['road'].astype(str) + ' ' + map_data['direction'].astype(str) + ' - ' + speeds.round(1).astype(str) + ' mph'
+        
+        # Pre-allocate arrays for better performance
+        n_segments = len(map_data)
+        line_data = []
+        
+        # Use itertuples for fastest iteration
+        for i, row in enumerate(map_data.itertuples()):
+            speed_cat = speed_categories[i]
+            segment_label = segment_labels.iloc[i]
+            
+            # Add both start and end points
+            line_data.extend([
+                {
+                    'latitude': row.start_latitude,
+                    'longitude': row.start_longitude,
+                    'road': row.road,
+                    'direction': row.direction,
+                    'speed': row.speed_mean,
+                    'speed_category': speed_cat,
+                    'segment_label': segment_label,
+                    'segment_id': row.tmc
+                },
+                {
+                    'latitude': row.end_latitude,
+                    'longitude': row.end_longitude,
+                    'road': row.road,
+                    'direction': row.direction,
+                    'speed': row.speed_mean,
+                    'speed_category': speed_cat,
+                    'segment_label': segment_label,
+                    'segment_id': row.tmc
+                }
+            ])
+        
+        result_df = pd.DataFrame(line_data)
+        return result_df
     
     def get_available_dates(self):
         """Get list of unique dates available in the data"""
@@ -631,7 +736,7 @@ def main():
                 week_data = inrix_data.df_1y[inrix_data.df_1y['year_week'] == selected_week]
                 start_date = week_data['date'].min()
                 end_date = week_data['date'].max()
-                date_range = f"{start_date} to {end_date}" if start_date and end_date else selected_week
+                date_range = f"{start_date.strftime('%A, %B %d, %Y')} to {end_date.strftime('%A, %B %d, %Y')}" if start_date and end_date else selected_week
                 
                 fig3 = px.imshow(
                     pivot_data,
@@ -829,6 +934,10 @@ def main():
             st.session_state.map_center = None
             st.session_state.map_zoom = None
             st.session_state.map_bounds = None
+            st.session_state.current_fig = None  # Cache the current figure
+            st.session_state.last_selected_date = None  # Track last selected date
+            st.session_state.current_map_data = None  # Cache current map data
+            st.session_state.available_dates = None  # Cache available dates
         
         # Check if data is aggregated
         if inrix_data.df_1y is None:
@@ -848,60 +957,57 @@ def main():
             if inrix_data.df_1y is None:
                 st.warning("No aggregated data available. Please go to Data Preprocessing tab and aggregate the data first.")
                 st.stop()
-                
+
         # Get complete map data for calculating initial bounds (only once)
         if st.session_state.map_initialized is False:
-            full_map_data = inrix_data.get_tmc_map_data()  # All weeks data
+            with st.spinner("Initializing map configuration..."):
+                # Use a sample of data to calculate bounds more efficiently
+                sample_data = inrix_data.df_1y.sample(min(1000, len(inrix_data.df_1y)))
+                
+                if not sample_data.empty:
+                    # Calculate map center and bounds based on sample data
+                    min_lat = min(sample_data['start_latitude'].min(), sample_data['end_latitude'].min())
+                    max_lat = max(sample_data['start_latitude'].max(), sample_data['end_latitude'].max())
+                    min_lon = min(sample_data['start_longitude'].min(), sample_data['end_longitude'].min())
+                    max_lon = max(sample_data['start_longitude'].max(), sample_data['end_longitude'].max())
+                    
+                    # Calculate center
+                    center_lat = (min_lat + max_lat) / 2
+                    center_lon = (min_lon + max_lon) / 2
+                    
+                    # Calculate zoom level
+                    lat_diff = max_lat - min_lat
+                    lon_diff = max_lon - min_lon
+                    lat_diff = max(lat_diff, 0.01)
+                    lon_diff = max(lon_diff, 0.01)
+                    
+                    screen_ratio = 2.0
+                    lat_zoom = math.log2(360 / (lat_diff * 1.1)) - 1
+                    lon_zoom = math.log2(360 / (lon_diff * 1.1 * screen_ratio)) - 1
+                    map_zoom = max(9, min(15, round(min(lat_zoom, lon_zoom))))
+       
+                    # Store values in session state
+                    st.session_state.map_center = {"lat": center_lat, "lon": center_lon}
+                    st.session_state.map_zoom = map_zoom
+                    st.session_state.map_bounds = {
+                        "south": min_lat - 0.01,
+                        "west": min_lon - 0.01,
+                        "north": max_lat + 0.01,
+                        "east": max_lon + 0.01
+                    }
+                else:
+                    # Default values if no data
+                    st.session_state.map_center = {"lat": 33.4484, "lon": -112.0740}
+                    st.session_state.map_zoom = 10
+                    
+                st.session_state.map_initialized = True
 
-            if full_map_data is not None and not full_map_data.empty:
-                
-                # Calculate map center and bounds based on all data
-                min_lat = min(full_map_data['start_latitude'].min(), full_map_data['end_latitude'].min())
-                max_lat = max(full_map_data['start_latitude'].max(), full_map_data['end_latitude'].max())
-                min_lon = min(full_map_data['start_longitude'].min(), full_map_data['end_longitude'].min())
-                max_lon = max(full_map_data['start_longitude'].min(), full_map_data['end_longitude'].max())
-                
-                # Calculate center
-                center_lat = (min_lat + max_lat) / 2
-                center_lon = (min_lon + max_lon) / 2
-                
-                # Add a small buffer to ensure all points are visible (about 5% padding)
-                lat_diff = max_lat - min_lat
-                lon_diff = max_lon - min_lon
-                
-                # Ensure we have at least some difference (avoid division by zero)
-                lat_diff = max(lat_diff, 0.01)
-                lon_diff = max(lon_diff, 0.01)
-                
-                # Calculate zoom level using a logarithmic approach
-                screen_ratio = 2.0
-                lat_zoom = math.log2(360 / (lat_diff * 1.1)) - 1
-                lon_zoom = math.log2(360 / (lon_diff * 1.1 * screen_ratio)) - 1
-                
-                # Use the smaller zoom level to ensure all points are visible
-                map_zoom = min(lat_zoom, lon_zoom)
-                map_zoom = max(9, min(15, round(map_zoom)))
-   
-                # Store values in session state
-                st.session_state.map_center = {"lat": center_lat, "lon": center_lon}
-                st.session_state.map_zoom = map_zoom
-                st.session_state.map_bounds = {
-                    "south": min_lat - 0.01,
-                    "west": min_lon - 0.01,
-                    "north": max_lat + 0.01,
-                    "east": max_lon + 0.01
-                }
-                st.session_state.map_initialized = True
-            else:
-                print("******** in else")
-                # Default values if no data
-                st.session_state.map_center = {"lat": 33.4484, "lon": -112.0740}  # Phoenix
-                st.session_state.map_zoom = 10
-                st.session_state.map_initialized = True
-        
         # Map filters
-        # Get list of available dates
-        available_dates = inrix_data.get_available_dates()
+        # Get list of available dates (cache this as well since it doesn't change)
+        if 'available_dates' not in st.session_state or st.session_state.available_dates is None:
+            st.session_state.available_dates = inrix_data.get_available_dates()
+        
+        available_dates = st.session_state.available_dates
         
         if available_dates is not None and len(available_dates) > 0:
             # Convert to datetime.date objects for the date_input widget
@@ -909,6 +1015,7 @@ def main():
             max_date = max(available_dates)
             
             # Create date picker
+            t_date_input_start = time.time()
             selected_date = st.date_input(
                 "Select Date",
                 value=min_date,  # Default to the first available date
@@ -920,228 +1027,156 @@ def main():
             # Convert selected_date to the same format as in the dataframe
             selected_date_pd = pd.to_datetime(selected_date).date()
             
+            # Only update map if date has changed
+            date_changed = (st.session_state.last_selected_date != selected_date_pd)
+            
+            # Add JavaScript timing measurement
+            if date_changed or st.session_state.current_fig is None:
+                
+                with st.spinner("Loading map data..."):
+                    # Get optimized map data
+                    map_data = inrix_data.get_tmc_map_data_optimized(selected_date=selected_date_pd)
+                    
+                    if map_data is not None and not map_data.empty:
+                        # Define color mapping once
+                        speed_color_map = {
+                            '0-20': '#ff0000',    # Red
+                            '20-30': '#ff4500',   # Orange-red
+                            '30-40': '#ff8c00',   # Orange
+                            '40-50': '#ffff00',   # Yellow
+                            '50-60': '#7fff00',   # Light green
+                            '60+': '#027a02'      # Dark green
+                        }
+                        
+                        # Prepare line data efficiently
+                        line_df = inrix_data.prepare_map_line_data(map_data)
+
+                        if not line_df.empty:
+                            # Create the map
+
+                            fig9 = px.line_map(
+                                line_df,
+                                lat="latitude",
+                                lon="longitude",
+                                color="speed_category",
+                                color_discrete_map=speed_color_map,
+                                hover_name="segment_label",
+                                hover_data=["road", "direction", "speed"],
+                                line_group="segment_id",
+                                map_style="basic",
+                                zoom=st.session_state.map_zoom,
+                                center=st.session_state.map_center,
+                                height=700,
+                                category_orders={"speed_category": ['60+', '50-60', '40-50', '30-40', '20-30', '0-20']},
+                                labels={"speed_category": "Speed Range (mph)", "speed": "Speed (mph)"}
+                            )
+                            
+                            # Update layout
+                            title_text = f"Daily Average Traffic Speed Map - {selected_date.strftime('%A, %B %d, %Y')}"
+                            
+                            fig9.update_layout(
+                                title=title_text,
+                                map=dict(
+                                    style="basic",
+                                    center=st.session_state.map_center,
+                                    zoom=st.session_state.map_zoom,
+                                    bounds=st.session_state.map_bounds
+                                ),
+                                height=700,
+                                margin={"r":30,"t":30,"l":30,"b":30},
+                                legend_title_text="Speed Range (mph)",
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="bottom",
+                                    y=-0.1,
+                                    xanchor="center",
+                                    x=0.5
+                                )
+                            )
+                            
+                            # Cache the figure and data
+                            st.session_state.current_fig = fig9
+                            st.session_state.current_map_data = map_data
+                            st.session_state.last_selected_date = selected_date_pd
+                        else:
+                            st.session_state.current_fig = go.Figure()
+                            st.session_state.current_map_data = pd.DataFrame()
+                    else:
+                        st.session_state.current_fig = go.Figure()
+                        st.session_state.current_map_data = pd.DataFrame()
+
             # Show which date is selected
             st.info(f"Showing daily average traffic speeds for: {selected_date.strftime('%A, %B %d, %Y')}")
+            
+            # Display the cached figure - THIS IS WHERE BROWSER RENDERING HAPPENS
+            if st.session_state.current_fig is not None:
+                st.plotly_chart(st.session_state.current_fig, use_container_width=True)
+                # Show summary statistics using cached data
+                if hasattr(st.session_state, 'current_map_data') and not st.session_state.current_map_data.empty:
+                    st.subheader("Map Summary")
+                    
+                    map_data = st.session_state.current_map_data
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Segments Displayed", f"{len(map_data)}")
+                    
+                    with col2:
+                        st.metric("Average Speed", f"{map_data['speed_mean'].mean():.1f} mph")
+                    
+                    with col3:
+                        st.metric("Speed Range", f"{map_data['speed_mean'].min():.1f} - {map_data['speed_mean'].max():.1f} mph")
+                    
+                    # Show speed distribution
+                    speed_dist = map_data['speed_category'].value_counts().sort_index()
+
+                    fig10 = px.pie(
+                        values=speed_dist.values,
+                        names=speed_dist.index,
+                        title="Speed Distribution",
+                        color=speed_dist.index,
+                        color_discrete_map={
+                            '0-20': '#ff0000',
+                            '20-30': '#ff4500',
+                            '30-40': '#ff8c00',
+                            '40-50': '#ffff00',
+                            '50-60': '#7fff00',
+                            '60+': '#027a02'
+                        }
+                    )
+                    st.plotly_chart(fig10, use_container_width=True)
+                    
+            else:
+                st.warning("No map data available for the selected date.")
+
         else:
             selected_date_pd = None
             st.warning("No date data available.")
         
-        # Get map data for the selected date only
-        map_data = None
-        if selected_date_pd is not None:
-            map_data = inrix_data.get_tmc_map_data(selected_date=selected_date_pd)
-        else:
-            # Fallback if no dates available
-            map_data = inrix_data.get_tmc_map_data()
-            
-        # Use the stored map configuration from session state
-        map_center = st.session_state.map_center
-        map_zoom = st.session_state.map_zoom
-        map_bounds = st.session_state.map_bounds
-   
-        if map_data is not None and not map_data.empty:
-                    
-            # Create a color scale for speed
-            speed_min = map_data['speed_mean'].min()
-            speed_max = map_data['speed_mean'].max()                # Create speed categories for better visualization
-            map_data['speed_category'] = pd.cut(
-                map_data['speed_mean'],
-                bins=[0, 20, 30, 40, 50, 60, 100],
-                labels=['0-20', '20-30', '30-40', '40-50', '50-60', '60+']
-            )
-            
-            # Create segment labels
-            map_data['segment_label'] = map_data.apply(
-                lambda x: f"{x['road']} {x['direction']} - {x['speed_mean']:.1f} mph", 
-                axis=1
-            )
-            
-            # Create line segments for the map
-            segments = []
-            for _, row in map_data.iterrows():
-                segments.append({
-                    'start_lat': row['start_latitude'],
-                    'start_lon': row['start_longitude'],
-                    'end_lat': row['end_latitude'],
-                    'end_lon': row['end_longitude'],
-                    'speed': row['speed_mean'],
-                    'label': row['segment_label']
-                })
-            
-            # Prepare data for px.line_mapbox
-            # We need to create a DataFrame with start and end points for each segment
-            line_data = []
-            
-            # Speed to color mapping
-            speed_color_map = {
-                '0-20': '#ff0000',    # Red - extremely slow/stopped flow (<20 mph)
-                '20-30': '#ff4500',    # Orange-red - very slow flow (20-30 mph)
-                '30-40': '#ff8c00',    # Orange - slow flow (30-40 mph)
-                '40-50': '#ffff00',    # Yellow - moderate flow (40-50 mph)
-                '50-60': '#7fff00',    # Light green - good flow (50-60 mph)
-                '60+': '#027a02'       # Dark green - excellent flow (60+ mph)
-            }
-            
-            # Prepare data for visualization
-            for _, row in map_data.iterrows():
-                # Assign a speed category for coloring
-                if row['speed_mean'] > 60:
-                    speed_cat = '60+'
-                elif row['speed_mean'] > 50:
-                    speed_cat = '50-60'
-                elif row['speed_mean'] > 40:
-                    speed_cat = '40-50'
-                elif row['speed_mean'] > 30:
-                    speed_cat = '30-40'
-                elif row['speed_mean'] > 20:
-                    speed_cat = '20-30'
-                else:
-                    speed_cat = '0-20'
-                
-                # Add start point
-                line_data.append({
-                    'latitude': row['start_latitude'],
-                    'longitude': row['start_longitude'],
-                    'road': row['road'],
-                    'direction': row['direction'],
-                    'speed': row['speed_mean'],
-                    'speed_category': speed_cat,
-                    'segment_label': f"{row['road']} {row['direction']} - {row['speed_mean']:.1f} mph",
-                    'segment_id': row['tmc']
-                })
-                
-                # Add end point (with same attributes)
-                line_data.append({
-                    'latitude': row['end_latitude'],
-                    'longitude': row['end_longitude'],
-                    'road': row['road'],
-                    'direction': row['direction'],
-                    'speed': row['speed_mean'],
-                    'speed_category': speed_cat,
-                    'segment_label': f"{row['road']} {row['direction']} - {row['speed_mean']:.1f} mph",
-                    'segment_id': row['tmc']
-                })
-            
-            # Convert to DataFrame
-            if line_data:
-                line_df = pd.DataFrame(line_data)
-                
-                # Create the map using px.line_map
-                fig9 = px.line_map(
-                    line_df,
-                    lat="latitude",
-                    lon="longitude",
-                    color="speed_category",
-                    color_discrete_map=speed_color_map,
-                    hover_name="segment_label",
-                    hover_data=["road", "direction", "speed"],
-                    line_group="segment_id",  # Group lines by segment ID
-                    map_style="basic",
-                    zoom=map_zoom,
-                    center=map_center,
-                    height=700,
-                    category_orders={"speed_category": ['60+', '50-60', '40-50', '30-40', '20-30', '0-20']},
-                    labels={"speed_category": "Speed Range (mph)", "speed": "Speed (mph)"}
-                )
-            else:
-                # Create an empty figure if no data
-                fig9 = go.Figure()
-            
-            # Update layout for better appearance
-            if 'fig9' in locals():
-                # Use bounds from session state that were calculated during initialization
-                bounds = st.session_state.map_bounds if st.session_state.map_bounds else {
-                    "south": 33.0, "west": -112.5, "north": 34.0, "east": -111.5
-                }
-                
-                # Create a title that shows the selected date
-                title_text = f"Daily Average Traffic Speed Map"
-                if selected_date_pd:
-                    title_text += f" - {selected_date.strftime('%A, %B %d, %Y')}"
-                
-                fig9.update_layout(
-                    title=title_text,
-                    map=dict(
-                        style="basic",
-                        center=map_center,
-                        zoom=map_zoom,
-                        bounds=bounds
-                    ),
-                    height=700,
-                    margin={"r":30,"t":30,"l":30,"b":30},
-                    legend_title_text="Speed Range (mph)"
-                )
-                
-                # Improve the appearance of the legend
-                fig9.update_layout(
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=-0.1,
-                        xanchor="center",
-                        x=0.5
-                    )
-                )
-            
-            st.plotly_chart(fig9, use_container_width=True)
-            
-            # Show summary statistics
-            st.subheader("Map Summary")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Segments Displayed", f"{len(map_data)}")
-            
-            with col2:
-                st.metric("Average Speed", f"{map_data['speed_mean'].mean():.1f} mph")
-            
-            with col3:
-                st.metric("Speed Range", f"{map_data['speed_mean'].min():.1f} - {map_data['speed_mean'].max():.1f} mph")
-            
-            # Show distribution of speeds
-            speed_dist = map_data['speed_category'].value_counts().sort_index()
-            
-            fig10 = px.pie(
-                values=speed_dist.values,
-                names=speed_dist.index,
-                title="Speed Distribution",
-                color=speed_dist.index,
-                color_discrete_map={
-                    '0-20': '#ff0000',
-                    '20-30': '#ff4500',
-                    '30-40': '#ff8c00',
-                    '40-50': '#ffff00',
-                    '50-60': '#7fff00',
-                    '60+': '#027a02'
-                }
-            )
-            st.plotly_chart(fig10, use_container_width=True)
-                
-        else:
-            st.warning("No map data available for the selected filters.")
-    
-    # Add About section and Cache control at the bottom of the page
-    st.markdown("---")  # Horizontal divider
-    
+        
+
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        if st.button("Clear Map Data Cache", 
-                    help="Reset cached map data if you notice issues or want to free up memory"):
-            # Clear all map-related caches from session state
-            if 'map_data_all_weeks' in st.session_state:
-                del st.session_state.map_data_all_weeks
-            if 'line_data_all_weeks' in st.session_state:
-                del st.session_state.line_data_all_weeks
-            if 'weekly_data_cache' in st.session_state:
-                del st.session_state.weekly_data_cache
-            if 'map_bounds' in st.session_state:
-                del st.session_state.map_bounds
-            if 'map_center' in st.session_state:
-                del st.session_state.map_center
-            if 'map_zoom' in st.session_state:
-                del st.session_state.map_zoom
-            st.success("Map data cache cleared successfully!")
+        if st.button("Clear All Caches", 
+                    help="Reset all cached data to free up memory"):
+            # Clear InrixData caches
+            if hasattr(inrix_data, '_daily_map_cache'):
+                inrix_data._daily_map_cache.clear()
+            
+            # Clear session state caches
+            cache_keys_to_clear = [
+                'map_data_all_weeks', 'line_data_all_weeks', 'weekly_data_cache',
+                'map_bounds', 'map_center', 'map_zoom', 'current_fig', 
+                'current_map_data', 'last_selected_date', 'available_dates',
+                'map_initialized'
+            ]
+            
+            for key in cache_keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+                    
+            st.success("All caches cleared successfully!")
+            st.rerun()
     
     with col2:
         with st.expander("About this dashboard"):
@@ -1151,6 +1186,12 @@ def main():
             - Temporal analysis (daily/weekly/seasonal patterns)
             - Spatial analysis (road segment performance)
             - Interactive map visualization
+            
+            **Performance Optimizations:**
+            - Cached map data for faster date switching
+            - Optimized data processing using pandas query and itertuples
+            - Smart session state management to reduce re-rendering
+            - Memory-efficient data handling
             
             Created by USDOT: Work Zone Data Exchange (WZDx) Project
             """)
