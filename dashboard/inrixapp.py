@@ -16,7 +16,7 @@ from pathlib import Path
 import calendar
 import json
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import math
 
 # Set page config to wide mode
@@ -574,6 +574,110 @@ class InrixData:
         unique_dates = pd.to_datetime(unique_dates).date
         
         return unique_dates
+    
+    def format_year_week_simple(self, year_week: str) -> str:
+        """
+        Convert a 'YYYY-WW' string (ISO week) to a label with its Monday–Sunday date range.
+        Example: '2024-39' -> 'Week 39 (Sep 23 - Sep 29, 2024)'
+        """
+        try:
+            year_str, week_str = year_week.split('-')
+            year = int(year_str)
+            week = int(week_str)
+            # ISO: Monday=1 ... Sunday=7
+            monday = datetime.fromisocalendar(year, week, 1)
+            sunday = monday + timedelta(days=6)
+            return f"Week {week} ({monday.strftime('%b %d')} - {sunday.strftime('%b %d, %Y')})"
+        except Exception:
+            return f"Week {year_week}"
+    
+    def get_major_holidays(self, start_date=None, end_date=None):
+        """Return list of (date, name) for major US holidays within the data range.
+        Holidays included: New Year's Day, MLK Day, Memorial Day, Independence Day,
+        Labor Day, Thanksgiving, Christmas. Handles observed days if holiday falls on weekend.
+        """
+        if self.df_1y is None or 'date' not in self.df_1y.columns:
+            return []
+        # Determine range
+        data_min = pd.to_datetime(self.df_1y['date'].min()).date()
+        data_max = pd.to_datetime(self.df_1y['date'].max()).date()
+        if start_date:
+            start_date = pd.to_datetime(start_date).date()
+            data_min = max(data_min, start_date)
+        if end_date:
+            end_date = pd.to_datetime(end_date).date()
+            data_max = min(data_max, end_date)
+        years = range(data_min.year, data_max.year + 1)
+        holidays = []
+        for year in years:
+            # New Year's Day (Jan 1)
+            ny = date(year, 1, 1)
+            # Observed adjustment
+            if ny.weekday() == 5:  # Saturday
+                ny_obs = ny - timedelta(days=1)
+            elif ny.weekday() == 6:  # Sunday
+                ny_obs = ny + timedelta(days=1)
+            else:
+                ny_obs = ny
+            holidays.append((ny_obs, "New Year's Day"))
+            # MLK Day: 3rd Monday of Jan
+            mlk = self._nth_weekday_of_month(year, 1, 0, 3)
+            holidays.append((mlk, "MLK Day"))
+            # Memorial Day: last Monday of May
+            memorial = self._last_weekday_of_month(year, 5, 0)
+            holidays.append((memorial, "Memorial Day"))
+            # Independence Day: July 4 (observed logic)
+            july4 = date(year, 7, 4)
+            if july4.weekday() == 5:
+                july4_obs = july4 - timedelta(days=1)
+            elif july4.weekday() == 6:
+                july4_obs = july4 + timedelta(days=1)
+            else:
+                july4_obs = july4
+            holidays.append((july4_obs, "Independence Day"))
+            # Labor Day: 1st Monday of Sep
+            labor = self._nth_weekday_of_month(year, 9, 0, 1)
+            holidays.append((labor, "Labor Day"))
+            # Thanksgiving: 4th Thursday Nov
+            thanksgiving = self._nth_weekday_of_month(year, 11, 3, 4)
+            holidays.append((thanksgiving, "Thanksgiving"))
+            # Christmas: Dec 25 (observed adjustment)
+            xmas = date(year, 12, 25)
+            if xmas.weekday() == 5:
+                xmas_obs = xmas - timedelta(days=1)
+            elif xmas.weekday() == 6:
+                xmas_obs = xmas + timedelta(days=1)
+            else:
+                xmas_obs = xmas
+            holidays.append((xmas_obs, "Christmas"))
+        # Filter to data range
+        holidays = [h for h in holidays if data_min <= h[0] <= data_max]
+        # Deduplicate (e.g., observed overlapping with actual next year)
+        seen = set()
+        unique = []
+        for d, n in holidays:
+            if d not in seen:
+                unique.append((d, n))
+                seen.add(d)
+        return unique
+
+    def _nth_weekday_of_month(self, year, month, weekday, n):
+        """Return date of the nth weekday (0=Mon) in given month/year."""
+        first = date(year, month, 1)
+        shift = (weekday - first.weekday()) % 7
+        return first + timedelta(days=shift + (n - 1) * 7)
+
+    def _last_weekday_of_month(self, year, month, weekday):
+        """Return date of last weekday (0=Mon) in month/year."""
+        if month == 12:
+            first_next = date(year + 1, 1, 1)
+        else:
+            first_next = date(year, month + 1, 1)
+        last = first_next - timedelta(days=1)
+        # walk backwards to weekday
+        while last.weekday() != weekday:
+            last -= timedelta(days=1)
+        return last
 
 
 def main():
@@ -583,9 +687,10 @@ def main():
     inrix_data = InrixData()
     
     # Add tabs for different sections
-    tab_preprocessing, tab_temporal, tab_spatial, tab_map = st.tabs([
+    tab_preprocessing, tab_temporal, tab_weekly_animation, tab_spatial, tab_map = st.tabs([
         "Data Preprocessing", 
         "Temporal Analysis", 
+        "Weekly Animation",
         "Spatial Analysis", 
         "Interactive Map"
     ])
@@ -605,6 +710,7 @@ def main():
             sample = inrix_data.get_sample_data()
             if sample is not None:
                 st.dataframe(sample)
+                st.dataframe(sample.describe())
             
             # Check if chunks already exist
             chunk_files = inrix_data.get_chunk_files()
@@ -690,6 +796,56 @@ def main():
             title='Daily Average Speed Over One Year',
             labels={'speed_mean': 'Average Speed (mph)', 'date': 'Date'}
         )
+        # Add major holidays
+        try:
+            holidays = inrix_data.get_major_holidays()
+            if holidays:
+                daily_dates = pd.to_datetime(daily_avg['date']).dt.date
+                y_series = daily_avg['speed_mean']
+                y_min = float(y_series.min())
+                y_max = float(y_series.max())
+                y_span = y_max - y_min if y_max > y_min else 1.0
+                used_x = set()
+                hol_x = []
+                hol_y = []
+                hol_hover = []
+                for h_date, h_name in holidays:
+                    if h_date in daily_dates.values:
+                        mask = (daily_dates == h_date)
+                        y_val = float(y_series[mask].iloc[0]) if mask.any() else (y_min + 0.1 * y_span)
+                        hol_x.append(h_date)
+                        hol_y.append(y_val)
+                        hol_hover.append(f"{h_name}<br>{y_val:.2f} mph")
+                        fig1.add_vline(x=h_date, line_width=1, line_dash='dot', line_color='#aa3366', opacity=0.5)
+                        if h_date not in used_x:
+                            offset = 0.02 + (0.04 * (len(used_x) % 3))
+                            fig1.add_annotation(
+                                x=h_date,
+                                y=y_val + offset * y_span,
+                                text=h_name,
+                                showarrow=False,
+                                font=dict(size=10, color='#aa3366'),
+                                yanchor='bottom',
+                                textangle=-45
+                            )
+                            used_x.add(h_date)
+                if hol_x:
+                    fig1.add_scatter(
+                        x=hol_x,
+                        y=hol_y,
+                        mode='markers',
+                        marker=dict(color='#aa3366', size=8, symbol='diamond'),
+                        name='Holidays',
+                        hovertext=hol_hover,
+                        hovertemplate='%{hovertext}<extra></extra>'
+                    )
+                fig1.add_annotation(
+                    xref='paper', yref='paper', x=0, y=1.07, showarrow=False,
+                    text='Diamonds mark major US holidays',
+                    font=dict(size=11, color='#aa3366')
+                )
+        except Exception as e:
+            print(f"Holiday annotation error: {e}")
         fig1.update_layout(height=500)
         st.plotly_chart(fig1, use_container_width=True)
         
@@ -708,49 +864,6 @@ def main():
         )
         fig2.update_layout(height=500)
         st.plotly_chart(fig2, use_container_width=True)
-        
-        # Monthly statistics
-        # monthly_stats = inrix_data.get_monthly_speed_stats()
-        # st.subheader("Monthly Speed Statistics")
-        # st.dataframe(monthly_stats)
-        
-        # Weekly heatmap selection
-        st.subheader("Weekly Speed Patterns")
-        
-        weekly_data = inrix_data.get_weekly_pivots()
-        if weekly_data:
-            unique_year_weeks = weekly_data['unique_year_weeks']
-            weekly_pivots = weekly_data['weekly_pivots']
-            global_max = weekly_data['global_max']
-            
-            selected_week = st.selectbox(
-                "Select week to view:", 
-                options=unique_year_weeks,
-                format_func=lambda x: f"Week {x}"
-            )
-            
-            if selected_week in weekly_pivots:
-                pivot_data = weekly_pivots[selected_week]
-                
-                # Get date range for the selected week
-                week_data = inrix_data.df_1y[inrix_data.df_1y['year_week'] == selected_week]
-                start_date = week_data['date'].min()
-                end_date = week_data['date'].max()
-                date_range = f"{start_date.strftime('%A, %B %d, %Y')} to {end_date.strftime('%A, %B %d, %Y')}" if start_date and end_date else selected_week
-                
-                fig3 = px.imshow(
-                    pivot_data,
-                    title=f'Average Speed by Day and Hour: Week {selected_week} ({date_range})',
-                    labels=dict(x="Hour of Day", y="Day of Week", color="Average Speed (mph)"),
-                    x=pivot_data.columns,
-                    y=pivot_data.index,
-                    color_continuous_scale="viridis",
-                    zmin=40, zmax=global_max
-                )
-                fig3.update_layout(height=600)
-                st.plotly_chart(fig3, use_container_width=True)
-            else:
-                st.warning(f"No data available for week {selected_week}")
         
         # Seasonal analysis
         st.subheader("Seasonal Analysis")
@@ -838,6 +951,143 @@ def main():
                 
                 st.write("Weekend vs Weekday Speed Difference:")
                 st.dataframe(speed_diff)
+    
+    with tab_weekly_animation:
+        st.header("Weekly Animation")
+        st.markdown("Animated weekly day/hour speed heatmap. Loops through all available weeks with a fixed color scale.")
+        weekly_data = inrix_data.get_weekly_pivots()
+        if weekly_data:
+            unique_year_weeks = weekly_data['unique_year_weeks']
+            weekly_pivots = weekly_data['weekly_pivots']
+            global_min = weekly_data['global_min']
+            global_max = weekly_data['global_max']
+
+            if len(weekly_pivots) == 0:
+                st.info("No weekly pivot data available.")
+            else:
+                # Cache figure construction to avoid rebuilding on every rerun
+                if 'weekly_animation_fig' not in st.session_state:
+                    # Build frames
+                    frames = []
+                    first_week = unique_year_weeks[0]
+                    first_pivot = weekly_pivots[first_week]
+
+                    # Create initial trace (first frame)
+                    # Reverse day order (display Monday at top -> Sunday bottom) by reversing list and flipping z accordingly
+                    day_labels = list(first_pivot.index)
+                    # reversed_days = day_labels[::-1]
+                    # def pivot_to_reversed_matrix(pivot_df):
+                    #     return pivot_df.loc[reversed_days].values
+
+                    heatmap_trace = go.Heatmap(
+                        z=first_pivot.values,
+                        x=first_pivot.columns,
+                        y=day_labels,
+                        colorscale='Viridis',
+                        zmin=global_min,
+                        zmax=global_max,
+                        colorbar=dict(
+                            title='Speed (mph)',
+                            ticks='outside'
+                        )
+                    )
+
+                    for yw in unique_year_weeks:
+                        pivot_data = weekly_pivots[yw]
+                        week_df = inrix_data.df_1y[inrix_data.df_1y['year_week'] == yw]
+                        start_date = week_df['date'].min()
+                        end_date = week_df['date'].max()
+                        if start_date is not None and end_date is not None:
+                            date_range = f"{pd.to_datetime(start_date).strftime('%b %d, %Y')} - {pd.to_datetime(end_date).strftime('%b %d, %Y')}"
+                        else:
+                            date_range = yw
+                        frame_title = f"Avg Speed by Day/Hour - {inrix_data.format_year_week_simple(yw)}<br><sup>{date_range}</sup>"
+                        frames.append(
+                            go.Frame(
+                                data=[go.Heatmap(
+                                    z=pivot_data.values,
+                                    x=pivot_data.columns,
+                                    y=day_labels,
+                                    colorscale='Viridis',
+                                    zmin=global_min,
+                                    zmax=global_max,
+                                    showscale=True
+                                )],
+                                name=yw,
+                                layout=go.Layout(title=frame_title)
+                            )
+                        )
+
+                    # Slider steps
+                    slider_steps = []
+                    for yw in unique_year_weeks:
+                        slider_steps.append({
+                            'args': [[yw], {'frame': {'duration': 0, 'redraw': False}, 'mode': 'immediate'}],
+                            'label': yw,
+                            'method': 'animate'
+                        })
+
+                    # Figure layout with play/pause buttons
+                    initial_week_df = inrix_data.df_1y[inrix_data.df_1y['year_week'] == first_week]
+                    start_date0 = initial_week_df['date'].min()
+                    end_date0 = initial_week_df['date'].max()
+                    if start_date0 is not None and end_date0 is not None:
+                        date_range0 = f"{pd.to_datetime(start_date0).strftime('%b %d, %Y')} - {pd.to_datetime(end_date0).strftime('%b %d, %Y')}"
+                    else:
+                        date_range0 = first_week
+                    initial_title = f"Avg Speed by Day/Hour - {inrix_data.format_year_week_simple(first_week)}<br><sup>{date_range0}</sup>"
+
+                    fig_anim = go.Figure(data=[heatmap_trace], frames=frames)
+                    fig_anim.update_layout(
+                        title=initial_title,
+                        xaxis_title='Hour',
+                        yaxis_title='Day',
+                        yaxis=dict(autorange='reversed'),
+                        height=600,
+                        margin=dict(t=80, l=60, r=30, b=60),
+                        updatemenus=[{
+                            'type': 'buttons',
+                            'showactive': False,
+                            'x': 1.05,
+                            'y': 1.15,
+                            'buttons': [
+                                {
+                                    'label': 'Play',
+                                    'method': 'animate',
+                                    'args': [None, {
+                                        'frame': {'duration': 600, 'redraw': True},
+                                        'fromcurrent': True,
+                                        'transition': {'duration': 300, 'easing': 'linear'}
+                                    }]
+                                },
+                                {
+                                    'label': 'Pause',
+                                    'method': 'animate',
+                                    'args': [[None], {
+                                        'frame': {'duration': 0, 'redraw': False},
+                                        'mode': 'immediate',
+                                        'transition': {'duration': 0}
+                                    }]
+                                }
+                            ]
+                        }],
+                        sliders=[{
+                            'active': 0,
+                            'y': -0.07,
+                            'x': 0.05,
+                            'len': 0.9,
+                            'pad': {'b': 10, 't': 50},
+                            'currentvalue': {'prefix': 'Week: '},
+                            'steps': slider_steps
+                        }]
+                    )
+
+                    st.session_state.weekly_animation_fig = fig_anim
+
+                st.plotly_chart(st.session_state.weekly_animation_fig, use_container_width=True)
+                st.caption("Use the play button to animate through all weeks. Color scale fixed (40 mph to yearly max).")
+        else:
+            st.info("Aggregate data to enable weekly animation view.")
     
     with tab_spatial:
         st.header("Spatial Analysis")
