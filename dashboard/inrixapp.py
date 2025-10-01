@@ -687,10 +687,12 @@ def main():
     inrix_data = InrixData()
     
     # Add tabs for different sections
-    tab_preprocessing, tab_temporal, tab_weekly_animation, tab_spatial, tab_map = st.tabs([
+    # Added new "Map Animation" tab for hourly animation over the year (lightweight)
+    tab_preprocessing, tab_temporal, tab_weekly_animation, tab_map_animation, tab_spatial, tab_map = st.tabs([
         "Data Preprocessing", 
         "Temporal Analysis", 
         "Weekly Animation",
+        "Map Animation",
         "Spatial Analysis", 
         "Interactive Map"
     ])
@@ -1088,6 +1090,217 @@ def main():
                 st.caption("Use the play button to animate through all weeks. Color scale fixed (40 mph to yearly max).")
         else:
             st.info("Aggregate data to enable weekly animation view.")
+
+    with tab_map_animation:
+        st.header("Map Animation (Hourly Year)")
+        st.markdown("""
+        Lightweight animation of hourly average speeds across segments over the year. 
+        To preserve performance we (a) use midpoint markers instead of full line geometry, (b) allow frame down-sampling, and (c) cache preprocessed frame data.
+        """)
+        # NOTE: Performance strategy for this animation:
+        # - Convert segment geometry to single midpoint markers (halves points vs. start+end) to reduce plotly payload
+        # - Allow user to select frame_step (hour stride) and maximum frames to cap size
+        # - Use @st.cache_data for preprocessing the hourly midpoint table; invalidated only when filters change
+        # - Discrete color bins avoid per-frame colorscale recalculation
+        # - Frames built once and cached in session_state keyed by control parameters
+        # - Optionally filter roads to further reduce point count per frame
+
+        # Ensure aggregated data loaded
+        if inrix_data.df_1y is None:
+            aggregated_file_path = inrix_data.data_dir / f"{inrix_data.inrix_file_name}_aggregated.csv"
+            if aggregated_file_path.exists():
+                with st.spinner("Loading aggregated data..."):
+                    inrix_data.aggregate_data(force_reprocess=False)
+            else:
+                st.warning("No aggregated data available. Please aggregate in 'Data Preprocessing' tab first.")
+                st.stop()
+
+        # Guard if still none
+        if inrix_data.df_1y is None or inrix_data.tmc_locations is None:
+            st.info("Need both aggregated speed data and TMC location data.")
+            st.stop()
+
+        # Controls
+        col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1,1,1])
+        with col_ctrl1:
+            frame_step = st.select_slider(
+                "Frame step (hours)",
+                options=[1,2,3,6,12,24],
+                value=6,
+                help="Use larger step for fewer frames / faster playback"
+            )
+        with col_ctrl2:
+            max_frames = st.number_input("Max frames", min_value=100, max_value=2000, value=600, step=100,
+                                         help="Hard cap to avoid huge in-browser payload")
+        with col_ctrl3:
+            play_ms = st.slider("Frame duration (ms)", min_value=100, max_value=1000, value=300, step=50,
+                                help="Animation playback speed per frame")
+
+        # Optional road filter (helps reduce points)
+        available_roads = sorted([r for r in inrix_data.df_1y['road'].dropna().unique() if r])[:200]
+        selected_roads = st.multiselect("Filter roads (optional)", options=available_roads, default=[],
+                                        help="Leave empty to show all. Filtering reduces per-frame points.")
+
+        # Cached preprocessing function
+        @st.cache_data(show_spinner=False)
+        def _prepare_hourly_points(df, roads_filter):
+            # Minimal subset
+            cols_needed = ['hour','tmc','speed_mean','start_latitude','start_longitude','end_latitude','end_longitude','road','direction']
+            df2 = df[cols_needed].copy()
+            if roads_filter:
+                df2 = df2[df2['road'].isin(roads_filter)]
+            # Compute midpoints (vectorized)
+            df2['lat'] = (df2['start_latitude'] + df2['end_latitude']) / 2.0
+            df2['lon'] = (df2['start_longitude'] + df2['end_longitude']) / 2.0
+            # Downcast for memory
+            df2['speed_mean'] = pd.to_numeric(df2['speed_mean'], downcast='float')
+            # Ensure hour is datetime
+            df2['hour'] = pd.to_datetime(df2['hour'])
+            # Sort once
+            df2 = df2.sort_values('hour')
+            # Global min/max for color scaling
+            gmin = float(df2['speed_mean'].min())
+            gmax = float(df2['speed_mean'].max())
+            # Create categorical speed bins for discrete color legend (faster than continuous scale re-draw)
+            bins = [0,20,30,40,50,60,1000]
+            labels = ['0-20','20-30','30-40','40-50','50-60','60+']
+            df2['speed_bin'] = pd.cut(df2['speed_mean'], bins=bins, labels=labels, include_lowest=True)
+            return df2, gmin, gmax, labels
+
+        df_points, global_min_speed, global_max_speed, speed_labels = _prepare_hourly_points(inrix_data.df_1y, selected_roads)
+
+        # Build frame index (unique hours) with step & cap
+        unique_hours = df_points['hour'].drop_duplicates().sort_values()
+        # Apply step
+        unique_hours = unique_hours[::frame_step]
+        total_possible = len(unique_hours)
+        if len(unique_hours) > max_frames:
+            unique_hours = unique_hours[:max_frames]
+        st.caption(f"Building animation with {len(unique_hours)} frames (from {total_possible} possible after step {frame_step}).")
+
+        # Color mapping consistent
+        speed_color_map = {
+            '0-20': '#ff0000',
+            '20-30': '#ff4500',
+            '30-40': '#ff8c00',
+            '40-50': '#ffff00',
+            '50-60': '#7fff00',
+            '60+': '#027a02'
+        }
+
+        # Cache constructed figure per parameter combination
+        cache_key = (frame_step, max_frames, play_ms, tuple(sorted(selected_roads)))
+        if 'map_animation_cache' not in st.session_state:
+            st.session_state.map_animation_cache = {}
+
+        if cache_key not in st.session_state.map_animation_cache:
+            with st.spinner("Constructing animation frames (one-time, cached)..."):
+                # Derive rough center from data once
+                center_lat = float(df_points['lat'].mean()) if not df_points.empty else 0.0
+                center_lon = float(df_points['lon'].mean()) if not df_points.empty else 0.0
+
+                # --- Line segment animation (start->end) grouped by speed bin ---
+                speed_bin_order = ['60+','50-60','40-50','30-40','20-30','0-20']
+
+                def build_bin_traces(frame_df):
+                    traces = []
+                    for bin_label in speed_bin_order:
+                        sub = frame_df[frame_df['speed_bin'] == bin_label]
+                        if sub.empty:
+                            # Empty placeholder to preserve trace ordering in frames
+                            traces.append(go.Scattermap(lat=[], lon=[], mode='lines', name=bin_label,
+                                                        line=dict(color=speed_color_map[bin_label], width=3),
+                                                        hoverinfo='skip'))
+                            continue
+                        # Build coordinate arrays with None separators
+                        lats = []
+                        lons = []
+                        hover_texts = []
+                        for row in sub.itertuples():
+                            lats.extend([row.start_latitude, row.end_latitude, None])
+                            lons.extend([row.start_longitude, row.end_longitude, None])
+                            hover_texts.append(f"{row.road} {row.direction} | {row.speed_mean:.1f} mph")
+                        traces.append(go.Scattermap(
+                            lat=lats,
+                            lon=lons,
+                            mode='lines',
+                            name=bin_label,
+                            line=dict(color=speed_color_map[bin_label], width=3),
+                            hovertext=hover_texts,
+                            hoverinfo='text'
+                        ))
+                    return traces
+
+                frames = []
+                first_hour = unique_hours.iloc[0]
+                first_df = df_points[df_points['hour'] == first_hour]
+                base_traces = build_bin_traces(first_df)
+
+                for ts in unique_hours:
+                    sub_df = df_points[df_points['hour'] == ts]
+                    frame_traces = build_bin_traces(sub_df)
+                    frames.append(go.Frame(data=frame_traces, name=str(ts)))
+
+                slider_steps = [
+                    {
+                        'args': [[str(ts)], {'frame': {'duration': 0, 'redraw': False}, 'mode': 'immediate'}],
+                        'label': ts.strftime('%Y-%m-%d %H:%M'),
+                        'method': 'animate'
+                    }
+                    for ts in unique_hours
+                ]
+
+                title_base = "Hourly Segment Speeds (Line Segments)"
+                fig_map_anim = go.Figure(data=base_traces, frames=frames)
+                # Switch to MapLibre API: use layout.map instead of layout.mapbox
+                fig_map_anim.update_layout(
+                    map=dict(style='open-street-map', zoom=9, center={'lat': center_lat, 'lon': center_lon}),
+                    margin=dict(t=70, l=10, r=10, b=10)
+                )
+                fig_map_anim.update_layout(
+                    title=f"{title_base}<br><sup>{unique_hours.min().strftime('%Y-%m-%d')} to {unique_hours.max().strftime('%Y-%m-%d')}</sup>",
+                    updatemenus=[{
+                        'type': 'buttons', 'showactive': False, 'x': 1.05, 'y': 1.15,
+                        'buttons': [
+                            {
+                                'label': 'Play', 'method': 'animate',
+                                'args': [None, {
+                                    'frame': {'duration': play_ms, 'redraw': True},
+                                    'fromcurrent': True,
+                                    'transition': {'duration': 0}
+                                }]
+                            },
+                            {
+                                'label': 'Pause', 'method': 'animate',
+                                'args': [[None], {'frame': {'duration': 0, 'redraw': False}, 'mode': 'immediate'}]
+                            }
+                        ]
+                    }],
+                    sliders=[{
+                        'active': 0,
+                        'y': -0.05,
+                        'x': 0.05,
+                        'len': 0.9,
+                        'pad': {'b': 10, 't': 40},
+                        'currentvalue': {'prefix': 'Hour: '},
+                        'steps': slider_steps
+                    }]
+                )
+
+                # Use native legend from traces; ensure order
+                fig_map_anim.update_layout(legend=dict(title='Speed Range (mph)', orientation='h', y=-0.1, x=0.5, xanchor='center'))
+                st.session_state.map_animation_cache[cache_key] = fig_map_anim
+
+        fig_cached = st.session_state.map_animation_cache[cache_key]
+        st.plotly_chart(fig_cached, use_container_width=True, height=700)
+        st.caption("Markers show segment midpoint colored by hourly average speed. Adjust frame step to trade detail vs performance.")
+        with st.expander("Performance Notes"):
+            st.write("""
+            - Frames are down-sampled by the selected step to reduce payload size.
+            - Midpoint markers reduce geometry compared to drawing full line segments.
+            - DataFrame preprocessing is cached; changing controls invalidates only what is necessary.
+            - For full 1-hour resolution (frame step = 1) consider lowering max frames or filtering roads.
+            """)
     
     with tab_spatial:
         st.header("Spatial Analysis")
