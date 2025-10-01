@@ -767,3 +767,13 @@ No valid events data received
 [2025-09-30 03:00:06] Updated+Inserted: 2126, total: 46008 events in database
 [2025-09-30 06:00:07] Updated+Inserted: 2121, total: 46015 events in database
 [2025-09-30 09:00:19] Updated+Inserted: 2162, total: 46070 events in database
+[2025-09-30 12:00:05] Updated+Inserted: 2181, total: 46139 events in database
+[2025-09-30 15:00:11] Updated+Inserted: 2180, total: 46185 events in database
+[2025-09-30 18:00:06] Updated+Inserted: 2217, total: 46305 events in database
+[2025-09-30 21:00:08] Updated+Inserted: 2176, total: 46320 events in database
+Error fetching data: 500 Server Error: Internal Server Error for url: https://az511.com/api/v2/get/event?key=a865f0d34c4646a095491a68f4534835&format=json
+No valid events data received
+[2025-10-01 03:00:06] Updated+Inserted: 2104, total: 46340 events in database
+[2025-10-01 06:00:05] Updated+Inserted: 2121, total: 46360 events in database
+[2025-10-01 09:00:10] Updated+Inserted: 2163, total: 46420 events in database
+[2025-10-01 12:00:06] Updated+Inserted: 2198, total: 46488 events in database
