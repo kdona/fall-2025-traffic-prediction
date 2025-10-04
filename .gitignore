@@ -9,6 +9,9 @@
 *.db
 *.sqlite
 *.sqlite3
+*.csv
+*.parquet
+
 
 # Schedule runs
 *.sh
@@ -86,3 +89,4 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+database/i10-broadway/inrix.csv
