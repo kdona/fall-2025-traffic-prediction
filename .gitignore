@@ -11,6 +11,7 @@
 *.sqlite3
 *.csv
 *.parquet
+database/
 
 
 # Schedule runs
@@ -28,7 +29,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-*inrix-traffic-speed/
 lib/
 lib64/
 parts/
