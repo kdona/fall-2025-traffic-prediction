@@ -1,0 +1,1 @@
+INRIX TMC data for I-17 between I-10 and CAMELBACK RD/EXIT 203 and I-10 between AZ-101 LOOP/99TH AVE/EXIT 133 and PECOS RD/EXIT 161 from Sep 24, 2024 through Sep 23, 2025. Probe data includes all measures, and volume data includes Inrix 2013 and Inrix 2019
