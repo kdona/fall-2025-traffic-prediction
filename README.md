@@ -1,11 +1,56 @@
-# Arizona Transportation Dashboard
+# Traffic Prediction on I-10 in Phoenix, AZ
 
-A comprehensive transportation analytics dashboard that visualizes Arizona work zone data and real-time traffic flow using AZ511 and TomTom Traffic API integration.
+The goal of this project is to predict the travel time on I-10 given historical traffic data and (near) real-time work zone schedules and incident information.
+
+### Questions
+- How to predict short-term (30 sec to 5 min) traffic (speed on each road segment) on a freeway corridor, given historical traffic speed data?
+- How do planned (e.g., work zones) and unplanned (e.g., crashes) events affect short-term traffic delay? 
+- Does integrating these events improve short-term traffic prediction accuracy?
+
+#### Study Area:I-10 Broadway Curve: 11-mile stretch between Loop 202 and I-17
+
+![Work Zone Dashboard](images/i10_broadway_curve.png)
+*Matched events to the nearest TMC segment per direction*
+
+## Model Choices
+### Model Overview
+| Model Family | Description |
+|----------|-------------|
+| **Linear Regression** | Ordinary Least Squares (OLS), Ridge. Assume linear relationships between events, time features, and travel time. No spatial or temporal dependency.|
+| **Tree-Based Models** | Random Forest, Gradient Boosted Trees. Captures nonlinearities and interactions, No spatial or temporal dependency.|
+| **SARIMAX Models** | Seasonal ARIMA with Exogenous Regressors. Models serial dependence and seasonality directly. Computationally heavy. Consider temporal but no spatial dependency. |
+
+### Regressor (Features) Selection
+| Features | Description | Applies To |
+|----------|-------------|-------------|
+| **Events**  `(evt_*, evt_total)`| Counts or presence of road events (closures, obstructions, etc.) |Linear, Tree, SARIMAX(exog)|
+|**Cyclic time** `(hour_sin, hour_cos, dow_sin, dow_cos, hour_of_week_sin, hour_of_week_cos, is_weekend)`|Encodes daily & weekly periodicity| Linear, Tree, SARIMAX(exog)|
+|**Lags** `(travel_time_t-1, t-2,...)`|Captures short-term persistence|Linar, Tree|
+|**Seasonality** `(P,D,Q,s)`|Explicit periodic autocorrelation|SARIMAX only|
+
+
+## Training Results
+![Work Zone Dashboard](images/lr_ridge_full.png)
+*Linear Regression (Ridge) with full features*
+
+![Work Zone Dashboard](images/gbrt_cyc_lags.png)
+*Gradient boosted tree with cyclic time and lags features*
+
+![Work Zone Dashboard](images/sarimax_full.png)
+*SARIMAX model with full features*
+
+**! Caveat:** Linear and Tree models make one-shot prediction, which ignores temporal dependence. The following shows the results from rolling (recursive) prediction, where where each new prediction uses the previously predicted value instead of the true one as an input.
+
+![Work Zone Dashboard](images/lr_ridge_full_roll.png)
+*Linear Regression (Ridge) with full features, rolling prediction*
+
+![Work Zone Dashboard](images/gbrt_cyc_roll.png)
+*Gradient boosted tree with cyclic time features, rolling prediction*
+
+## Other Features
 
 ![Work Zone Dashboard](images/workzone.png)
 *Interactive map showing AZ511 work zones and traffic data across Arizona*
-
-## Features
 
 - **AZ511 Work Zone Monitoring**
   - Real-time work zone events
@@ -13,16 +58,6 @@ A comprehensive transportation analytics dashboard that visualizes Arizona work 
   - Geographic distribution analysis
   - Duration and timing analytics
 
-- **TomTom Traffic Flow Integration**
-  - Live traffic speed data from Arizona road networks
-  - Polyline-based sampling from az_interstates.geojson and az_sr.geojson
-  - Normalized database schema with road segments and traffic data
-  - 5-tier color-coded traffic flow visualization
-  - Road class filtering (FRC0-FRC6: Motorways to Local roads)
-  - Speed ratio calculations (current vs free-flow)
-
-![TomTom Traffic Flow](images/tomtom.png)
-*5-tier color-coded traffic flow visualization with road type filtering*
 
 - **Interactive Visualizations**
   - Combined map view with work zones and traffic flow
@@ -148,7 +183,7 @@ Dashboard Features:
 
 ```
 wzdx/
-├── database/                     # Database files and data collection scripts
+├── database/                    # Database files and data collection scripts
 │   ├── az511.db                 # SQLite database for AZ511 work zones
 │   ├── az511.py                 # AZ511 data collection script
 │   ├── tomtom.db                # SQLite database for TomTom traffic flow (normalized schema)
