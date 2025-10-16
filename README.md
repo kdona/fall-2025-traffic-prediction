@@ -1,11 +1,205 @@
-# Arizona Transportation Dashboard
+# Traffic Prediction on I-10 in Phoenix, AZ
 
-A comprehensive transportation analytics dashboard that visualizes Arizona work zone data and real-time traffic flow using AZ511 and TomTom Traffic API integration.
+Author: Yanbing Wang
+
+The goal of this project is to predict the travel time on I-10 given historical traffic data and (near) real-time work zone schedules and incident information.
+
+### Questions
+- How to predict short-term (30 sec to 5 min) traffic (speed on each road segment) on a freeway corridor, given historical traffic speed data?
+- How do planned (e.g., work zones) and unplanned (e.g., crashes) events affect short-term traffic delay? 
+- Does integrating these events improve short-term traffic prediction accuracy?
+
+#### Study Area: I-10 Broadway Curve: 11-mile stretch between Loop 202 and I-17
+
+![Work Zone Dashboard](images/i10_broadway_curve.png)
+*Matched events to the nearest TMC segment per direction*
+
+## Model Choices
+### Model Overview
+| Model Family | Description | Training Data
+|----------|-------------|-------------|
+| **Linear Regression** | Ordinary Least Squares (OLS), Ridge and Lasso. Assume linear relationships between events, time features, and travel time. No interaction terms. No spatial or temporal dependency.| Event-balanced data points[^1] |
+| **Tree-Based Models** | Random Forest, Gradient Boosted Trees and XGBoost. Captures nonlinearities and interactions, No spatial or temporal dependency.|Event-balanced data points[^1] |
+| **SARIMAX Models** | Seasonal ARIMA with Exogenous Regressors. Models serial dependence and seasonality directly, trained independently for each TMC. Computationally heavy. Consider temporal but no spatial dependency. | Full time-series for each TMC |
+| **LSTM** | A recurrent neural network for time-series prediction. A global (pooled) model trained on all TMC time-series sliced into short 24-hr sequences. Consider temporal but no spatial dependency.| Sliced short sequences across all TMCs |
+
+[^1]: The training data is a multi-index DataFrame with indices {tmc, time_bin}, where events are counted at each entry. Since events occur in less than 1% of 1-hr time bins, we downsample non-event entries to achieve approximately 50% event balance in the training data.
+
+### Regressor (Features) Selection
+| Features | Description | Applies To |
+|----------|-------------|-------------|
+| **Base**  `(miles, on/off ramps, curve)`| Static features related to road geometry each TMC | Linear, Tree, SARIMAX(exog)|
+| **Events (evt)**  `(evt_cat_planned, evt_cat_unplanned)`| Counts or presence of planned events (closures, roadwork, etc.) and unplanned events (crashes, debris, accidents etc.)|Linear, Tree, SARIMAX(exog)|
+|**Cyclic time (cyc)** `(hour_sin, hour_cos, dow_sin, dow_cos, hour_of_week_sin, hour_of_week_cos, is_weekend)`|Encodes daily & weekly periodicity| Linear, Tree, SARIMAX(exog)|
+|**Lags (lags)** `(travel_time_t-1, t-2,...)`|Captures short-term persistence|All models except for SARIMAX|
+|**Seasonality** `(P,D,Q,s)`|Explicit periodic autocorrelation|SARIMAX only|
+
+
+## Training Results
+For each model family, various regressor combinations were tested. The configurations include:
+1. base features only
+2. base + evt
+3. base + evt + lag 
+4. base + lag 
+5. base + cyc
+6. base + cyc + lag
+7. full features: base + cyc + evt + lag
+
+The following shows the model prediction results using "full" features for each model family.
+![true](images/travel-time-heatmap-true.png)
+*True travel time heatmap*
+
+![lr](images/heatmap-ridge-full.png)
+*Linear Regression (Ridge) with full features*
+
+![gbrt](images/heatmap-gbrt-full.png)
+*Gradient boosted tree with full features*
+
+![xgb](images/heatmap-xgb-full.png)
+*XGBoost model with full features*
+
+<!-- ![lstm](images/lstm_full.png)
+*LSTM model with full features* -->
+
+<!-- ![sarimax](images/sarimax_full.png)
+*SARIMAX model with full features* -->
+
+![gcn](images/heatmap-gcn-full.png)
+*GCN-LSTM predicted travel time heatmap*
+
+
+
+
+
+**! Important Note:** All models are trained to make one-shot prediction, i.e., given current or some lagged states, predict the travel time in the next time_bin. They are not designed for multi-step or recursive forecasting.
+
+## Feature Importance
+Preliminary and quantitative analyses show that lagged travel-time and cyclical time (hour/day) features dominate model performance, while event-related features contribute less. The ranking below is based on feature significance (p-values).
+
+#### The top 10 important features for LR models are:
+|feature	|coef	|p_value	|t_stat|
+|-------|--------|---------|---------|
+|log_lag1_tt_per_mile	|3.444037	|1.056173e-92	|21.773481|
+|log_lag2_tt_per_mile	|-1.232298	|4.372261e-10	|-6.277715|
+|hour_cos	|-0.566244	|4.455911e-06	|-4.604132|
+|curve	|0.425215	|4.697505e-03	|2.830896|
+|reference_speed	|0.282690|6.401187e-02	|1.853329|
+|onramp|	-0.317958	|9.896550e-02	|-1.650812|
+|log_lag3_tt_per_mile	|0.253012	|1.310296e-01	|1.510798|
+|hour_sin	|0.159311	|2.472554e-01|	1.157448|
+|is_weekend	|-0.170429	|3.894714e-01	|-0.860801|
+|evt_cat_unplanned	|0.107559	|3.956972e-01	|0.849550|
+
+
+
+#### Random Forest
+
+|feature |	importance |
+|-------|-------------|
+|log_lag1_tt_per_mile	|0.598673|
+|log_lag2_tt_per_mile	|0.167083|
+|log_lag3_tt_per_mile	|0.118422|
+|hour_cos	|0.026258|
+|miles	|0.021463|
+|hour_of_week_sin	|0.016678|
+|hour_of_week_cos	|0.013536|
+|hour_sin	|0.010765|
+|dow_sin	|0.006311|
+|reference_speed	|0.004457|
+
+#### Gradient boosted regression trees (GBRT)
+|feature |	importance |
+|-------|-------------|
+|log_lag1_tt_per_mile	|0.584466|
+|log_lag3_tt_per_mile	|0.091125|
+|hour_cos	|0.054218|
+|log_lag2_tt_per_mile	|0.039154|
+|hour_of_week_sin	|0.033247|
+|hour_sin	|0.019954|
+|reference_speed		|0.012360|
+|hour_of_week_cos	|0.011678|
+|miles		|0.008140|
+|evt_cat_unplanned	|0.004216|
+
+
+#### XGBoost:
+|feature |	importance |
+|-------|-------------|
+log_lag1_tt_per_mile	|0.302974
+log_lag2_tt_per_mile	|0.146063
+hour_cos	|0.080227
+reference_speed	|0.063320
+offramp	|0.060669
+log_lag3_tt_per_mile	|0.056196
+evt_cat_planned	|0.047618
+dow_sin	|0.046490
+hour_of_week_sin	|0.044603
+hour_sin	|0.040173
+
+
+
+---
+## Data Collection and Preprocessing
+
+### Work Zone Data Exchange (WZDx) from AZ511  (`database/az511.db`)
+Source: The AZ511 Traveler Information Platform provides event-based information on scheduled work zone activities and reported incidents within Arizona. It is continuously updated and accessible through the WZDx API at https://az511.com/api/wzdx. The dataset follows the WZDx Specification, which defines a standardized format for representing work zone data using GeoJSON documents. These documents describe attributes such as the location, status, and timing of work zones, as well as related elements like detours and field devices.
+
+Acquisition: This data is freely available with a free API key requested from AZ511. Since June 2025, data has been collected using a Python script scheduled via scrontab to run every 3 hours. The script sends API requests to retrieve the latest data and stores the responses in a local SQLite database (`database/az511.db`) for ongoing analysis. An example of an event data entry is the following:
+```python
+{
+    "ID": 541822,
+    "SourceId": "333416",
+    "Organization": "ERS",
+    "RoadwayName": "US-60",
+    "DirectionOfTravel": "West",
+    "Description": "Road closed due to flooding on US-60 Westbound  near   N Reppy Ave (MP 244)   ",
+    "Reported": 1760298060,
+    "LastUpdated": 1760372518,
+    "StartDate": 1760298060,
+    "PlannedEndDate": null,
+    "LanesAffected": "No Data",
+    "Latitude": 33.3958970525985,
+    "Longitude": -110.87480008516,
+    "LatitudeSecondary": null,
+    "LongitudeSecondary": null,
+    "EventType": "accidentsAndIncidents",
+    "EventSubType": "roadFlooding",
+    "IsFullClosure": false,
+    "Severity": "Major",
+    "EncodedPolyline": null,
+    "Restrictions": {
+      "Width": null,
+      "Height": null,
+      "Length": null,
+      "Weight": null,
+      "Speed": null
+    },
+    "DetourPolyline": "",
+    "DetourInstructions": "",
+    "Recurrence": "",
+    "RecurrenceSchedules": "",
+    "Details": "Detour South of Globe: SR-77 South to SR-177 North back onto US-60 West. \nDetour North of Globe:  SR-188 North to SR-87 South back to Phx Metro area.",
+    "LaneCount": 1
+  }
+```
+
+### INRIX Historic Traffic Speed Data (`database/inrix-traffic-speed/`)
+Source: INRIX provides traffic speed observations for selected road segments and can be accessed through a licensed agreement. It is a real‑time feed accessible via RESTful API endpoints that provides observed speeds and travel times for individual road segments specified by Traffic Messaging Center (TMC). The collection of speed and travel time data relies primarily on Floating Car Data (FCD) from a large number of connected devices (e.g. vehicles with GPS, in‑dash systems, mobile apps). The data is aggregated every minute for each road segment, and is reported as speed, free‑flow speed (i.e. speed under minimal traffic), as well as confidence indicators and travel times.  
+```
+Sample of the dataset (first 5 rows):
+tmc_code	measurement_tstamp	speed	historical_average_speed	reference_speed	travel_time_seconds	confidence_score	cvalue	Inrix 2013	Inrix 2019
+0	115+04387	2024-09-24 00:00:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
+1	115+04387	2024-09-24 00:01:00	52.0	49.0	49.0	10.77	30.0	100.0	2	6
+2	115+04387	2024-09-24 00:02:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
+3	115+04387	2024-09-24 00:03:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
+4	115+04387	2024-09-24 00:04:00	51.0	49.0	49.0	10.9
+```
+The downloaded data covers Interstate I‑17 and I‑10, SR60, and Loop 101 in the Phoenix, Tempe, Chandler, Mesa, and Gilbert areas. It also covers all major arterials in Tempe. The time range spans from September 24, 2024, to September 23, 2025.
+
+## Data Dashboard
 
 ![Work Zone Dashboard](images/workzone.png)
 *Interactive map showing AZ511 work zones and traffic data across Arizona*
-
-## Features
 
 - **AZ511 Work Zone Monitoring**
   - Real-time work zone events
@@ -13,16 +207,6 @@ A comprehensive transportation analytics dashboard that visualizes Arizona work 
   - Geographic distribution analysis
   - Duration and timing analytics
 
-- **TomTom Traffic Flow Integration**
-  - Live traffic speed data from Arizona road networks
-  - Polyline-based sampling from az_interstates.geojson and az_sr.geojson
-  - Normalized database schema with road segments and traffic data
-  - 5-tier color-coded traffic flow visualization
-  - Road class filtering (FRC0-FRC6: Motorways to Local roads)
-  - Speed ratio calculations (current vs free-flow)
-
-![TomTom Traffic Flow](images/tomtom.png)
-*5-tier color-coded traffic flow visualization with road type filtering*
 
 - **Interactive Visualizations**
   - Combined map view with work zones and traffic flow
@@ -31,91 +215,9 @@ A comprehensive transportation analytics dashboard that visualizes Arizona work 
   - Event type distribution charts
   - Duration analysis histograms
 
-## Prerequisites
 
-- Python 3.10+
-- Streamlit
-- TomTom API credentials
-- SQLite (for data storage)
-- Plotly for visualizations
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd wzdx
-```
-
-2. Install required dependencies:
-```bash
-pip install streamlit plotly pandas sqlite3 requests python-dotenv numpy shapely osmnx matplotlib
-```
-
-3. Set up your TomTom API credentials:
-```bash
-cp .env.template .env
-# Edit .env and add your TOMTOM_API_KEY
-```
-
-## Usage
-
-### Data Collection
-
-1. **Collect TomTom Traffic Flow Data**:
-```bash
-python database/tomtom.py
-```
-This script:
-- Samples points along Arizona interstate and state route polylines from GeoJSON files
-- Fetches traffic flow data from TomTom API at strategic road locations
-- Uses normalized database schema with road_segments and traffic_data tables
-- Implements batch processing (every 50 API calls) for efficiency
-- Stores data in `database/tomtom.db` SQLite database with foreign key relationships
-- Provides optimization parameters (DEGREE_STEP, API_ZOOM, API_THICKNESS, BATCH_SIZE)
-
-2. **Collect AZ511 Work Zone Data**:
-```bash
-python database/az511.py
-```
-This script:
-- Fetches work zone events from AZ511 API
-- Stores data in `database/az511.db` SQLite database
-- Includes construction, incidents, and road closures
-
-3. **Generate Phoenix Freeway Visualization (Optional)**:
-```bash
-python database/freeways.py
-```
-This utility script:
-- Extracts Phoenix freeway networks using OSMnx
-- Samples freeway points and saves to `freeway_points.json`
-- Creates visualization map saved as `images/freeways_map.png`
-- Uses minimal dependencies (osmnx, matplotlib) with robust error handling
-
-### Testing and Sample Point Generation
-
-**Generate TomTom Sample Points (Without API Calls)**:
-```bash
-# Run without TOMTOM_API_KEY to generate sample points only
-python database/tomtom.py
-```
-When run without API credentials, the script will:
-- Load polylines from GeoJSON files
-- Generate sample points along Arizona road networks
-- Save sample points to `tomtom_sample_points.json`
-- Display statistics about road coverage and sampling
-- Show example API request format for testing
-
-This is useful for:
-- Validating polyline sampling before making API calls
-- Understanding coverage areas and point density
-- Testing road network data integrity
-- Planning API usage and costs
-
-### Dashboard
-
-**Start the Transportation Dashboard**:
+## Dashboards
+**Dashboard to visualize events and traffic**:
 ```bash
 streamlit run dashboard/az511app.py
 ```
@@ -145,149 +247,45 @@ Dashboard Features:
 *Comprehensive analytics including event distributions, duration analysis, and temporal patterns*
 
 ## Project Structure
-
 ```
 wzdx/
-├── database/                     # Database files and data collection scripts
-│   ├── az511.db                 # SQLite database for AZ511 work zones
+├── environment.yml              # Conda environment specification
+├── requirements.txt             # Python dependencies (pip)
+├── run_az511.sh                 # Shell script to run AZ511 job
+├── start.sh                     # Convenience startup script
+├── README.md                    # Project documentation
+├── _log/                        # Logs from data collection
+│   └── az511_28538440.err
+├── dashboard/                   # Streamlit dashboard applications
+│   ├── az511app.py              # AZ511 work zone + traffic dashboard
+│   ├── inrixapp.py              # INRIX-specific dashboard
+│   ├── wzdxapp.py               # WZDx-focused dashboard
+│   └── __pycache__/             # Bytecode cache
+├── database/                    # Data files, scripts, and assets
 │   ├── az511.py                 # AZ511 data collection script
-│   ├── tomtom.db                # SQLite database for TomTom traffic flow (normalized schema)
-│   ├── tomtom.py                # TomTom traffic flow collection script (polyline-based)
-│   ├── az_interstates.geojson   # Arizona interstate highway polylines
-│   ├── az_sr.geojson            # Arizona state route polylines
-│   ├── freeways.py              # Phoenix freeway extraction and visualization
-│   ├── freeway_points.json      # Sampled freeway points (output)
-│   ├── tomtom_sample_points.json # TomTom API sample points (output)
-│   ├── workzones.db             # General work zone database
-│   └── wzdx.py                  # Work zone data processing script
-├── dashboard/                    # Streamlit dashboard applications
-│   ├── az511app.py              # Main transportation dashboard
-│   └── wzdxapp.py               # Work zone specific dashboard
-├── images/                       # Dashboard screenshots and documentation images
-│   ├── workzone.png             # Work zone dashboard screenshot
-│   ├── tomtom.png               # TomTom traffic flow screenshot
-│   ├── analytics.png            # Analytics dashboard screenshot
-│   └── freeways_map.png         # Phoenix freeway visualization (output)
-├── inrix/                       # Legacy structure (may contain additional utilities)
-├── .env                         # Environment variables (API keys)
-├── .env.template                # Template for environment variables
-├── .gitignore                   # Git ignore file (excludes .db files and .env)
-├── README.md                    # This file
-├── requirements.txt             # Python dependencies
-└── setup.py                    # Package setup configuration
+│   ├── wzdx.py                  # Work zone data processing script
+│   ├── i10-broadway/            # Training data preparation on I-10 broadway curve
+│   │   ├── X_tensor_1h.npz
+│   │   └── X_tensor_5min.npz
+│   └── inrix-traffic-speed/
+│       └── I10-and-I17-1year/
+│           ├── Contents.txt
+│           ├── I10-and-I17-1year.csv
+│           └── TMC_Identification.csv
+├── images/                      # Figures for README and dashboards
+├── models/                      # Model training output
+└── notebooks/                   # EDA and adhoc scripts
+  ├── eda_i10.ipynb
+  ├── eda_inrix.ipynb
+  ├── eda_wzdx.ipynb
+  ├── i10_lstm.ipynb
+  ├── i10_model_comparison.ipynb
+  ├── i10_sarimax.py
+  ├── i10_train_lr_tree.ipynb
+  ├── i10_train_time_series.ipynb
+  └── i10_training_data.ipynb
 ```
 
-## Database Schemas
-
-### AZ511 Database (`database/az511.db`)
-```sql
-TABLE events (
-    ID, Organization, RoadwayName, DirectionOfTravel,
-    Description, Reported, LastUpdated, StartDate,
-    PlannedEndDate, LanesAffected, Latitude, Longitude,
-    EventType, IsFullClosure, Severity
-)
-```
-
-### TomTom Database (`database/tomtom.db`)
-**Normalized Schema with Foreign Key Relationships:**
-
-```sql
--- Stable road segment information
-TABLE road_segments (
-    segment_id TEXT PRIMARY KEY,     -- Unique segment identifier (SHA256 hash)
-    openlr TEXT,                     -- OpenLR location reference
-    frc TEXT,                        -- Functional Road Class (FRC0-FRC6)
-    coordinates TEXT,                -- JSON array of lat/lon points for polyline
-    coordinate_lat REAL,             -- Primary coordinate latitude
-    coordinate_lon REAL,             -- Primary coordinate longitude
-    created_timestamp INTEGER       -- Segment creation timestamp
-)
-
--- Time-varying traffic data
-TABLE traffic_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    segment_id TEXT,                 -- Foreign key to road_segments
-    hash_id TEXT UNIQUE,             -- Unique identifier for this traffic measurement
-    timestamp INTEGER,               -- Data collection timestamp
-    currentSpeed REAL,               -- Current speed (mph)
-    freeFlowSpeed REAL,              -- Free flow speed (mph)
-    currentTravelTime INTEGER,       -- Current travel time (seconds)
-    freeFlowTravelTime INTEGER,      -- Free flow travel time (seconds)
-    confidence REAL,                 -- Data confidence level (0-1)
-    roadClosure BOOLEAN,             -- Road closure status
-    version TEXT,                    -- TomTom API version
-    FOREIGN KEY (segment_id) REFERENCES road_segments(segment_id)
-)
-```
-
-## Data Flow
-
-### TomTom Traffic Flow Data (Polyline-Based Collection)
-1. **Polyline Source**: Loads Arizona road networks from `az_interstates.geojson` and `az_sr.geojson`
-2. **Point Sampling**: Samples points along polylines at configurable intervals (default: 0.025 degrees ≈ 2.75km)
-3. **API Collection**: `database/tomtom.py` queries TomTom API for each sampled point
-4. **Normalized Storage**: 
-   - **road_segments**: Stores stable segment information (coordinates, FRC, location)
-   - **traffic_data**: Stores time-varying traffic measurements with foreign key relationships
-5. **Batch Processing**: Inserts data every 50 API calls for efficiency with rate limiting (200ms delays)
-6. **Visualization**: Dashboard renders traffic flow as colored polylines with optimized performance
-   - Segments grouped by FRC and color for efficient rendering
-   - Coordinate simplification for long segments (sample every 3rd point)
-   - Smart limiting for local roads (FRC4+ limited to 1000 segments)
-
-### Arizona Road Network Data
-1. **GeoJSON Sources**: 
-   - `az_interstates.geojson`: Major interstate highways (I-10, I-17, I-40, etc.)
-   - `az_sr.geojson`: Arizona state routes (SR-51, SR-101, SR-202, etc.)
-2. **Data Source**: Created using geojson.io for accurate road network representation
-3. **Visualization**: Displayed as separate map layers with distinct colors and opacity
-4. **Integration**: Used both for TomTom sampling points and as visual road network overlay
-
-### AZ511 Work Zone Data
-1. **Collection**: `database/az511.py` fetches work zone events from AZ511 API
-2. **Processing**: Handles datetime conversions and data validation
-3. **Storage**: Stores events in `database/az511.db` with full temporal information
-4. **Visualization**: Dashboard shows events as markers with analytics charts
-
-## API Configuration
-
-### TomTom Traffic API (Polyline-Based Sampling)
-- **Coverage**: Arizona statewide road networks (interstates and state routes)
-- **Sampling Method**: Points sampled along actual road polylines at ~2.75km intervals
-- **Data Sources**: 
-  - `az_interstates.geojson`: Major interstate highways
-  - `az_sr.geojson`: Arizona state routes
-- **API Parameters**:
-  - `DEGREE_STEP`: 0.025 (sampling interval in degrees)
-  - `API_ZOOM`: 10 (TomTom zoom level for coverage vs detail)
-  - `API_THICKNESS`: 10 (captures parallel roads)
-  - `BATCH_SIZE`: 50 (database insert frequency)
-- **Rate Limiting**: 200ms delay between API calls to respect TomTom limits
-- **Optimization**: Configurable parameters for balancing API efficiency vs coverage
-- **Deduplication**: Prevents duplicate traffic data using segment_id + timestamp hashing
-
-### Database Schema Benefits
-- **Normalized Design**: Separates stable road information from time-varying traffic data
-- **Foreign Key Relationships**: Maintains data integrity between road_segments and traffic_data
-- **Query Efficiency**: Indexed tables for fast filtering by FRC, location, and timestamp
-- **Storage Optimization**: Avoids duplicating road segment information for each traffic measurement
-
-### AZ511 API
-- **Coverage**: Statewide Arizona work zones and incidents
-- **Event Types**: Construction, accidents, closures, special events
-- **Update Frequency**: Real-time as events are reported
-- **Data Retention**: Historical events with start/end dates
-
-## Resources
-- AZ state routes: https://en.wikipedia.org/wiki/List_of_state_routes_in_Arizona#/map/0
-- geojson.io: https://geojson.io/#new&map=10.75/33.4155/-111.7815
-- TomTom developer: https://developer.tomtom.com/user/me/analytics
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
 
 ## License
 

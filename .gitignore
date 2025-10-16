@@ -12,6 +12,7 @@
 *.csv
 *.parquet
 database/
+models/
 
 
 # Schedule runs
