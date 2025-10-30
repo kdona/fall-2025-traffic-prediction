@@ -91,3 +91,4 @@ htmlcov/
 .dmypy.json
 dmypy.json
 database/i10-broadway/inrix.csv
+database/
