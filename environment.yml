@@ -1,4 +1,4 @@
-name: kafka
+name: erdos_ds_environment
 channels:
   - conda-forge
 dependencies:
@@ -245,4 +245,4 @@ dependencies:
       - venusian==3.1.0
       - watchdog==6.0.0
       - yarl==1.20.0
-prefix: /home/ywan1649/.conda/envs/kafka
+prefix: /Users/kristindona/anaconda/envs/erdos_ds_environment

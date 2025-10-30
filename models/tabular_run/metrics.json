@@ -1,0 +1,1402 @@
+[
+  {
+    "model": "rf_cyc_lags",
+    "rmse": 6.348461010462972,
+    "mae": 0.873864287724043,
+    "r2": 0.06003473381020075,
+    "fit_time": 0.23810100555419922,
+    "cv_rmse_mean": 2.4082725941512115,
+    "cv_rmse_std": 0.6540715024017458,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.845137094346698
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.024433430495027268
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.021193773080692306
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.020773331671072065
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.015924542920466564
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.015792516718805123
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.015146713234981754
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.012329571498149207
+      },
+      {
+        "feature": "dow_cos",
+        "score": 0.006442958290675313
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.0058350842931795075
+      }
+    ]
+  },
+  {
+    "model": "rf_full",
+    "rmse": 6.3482400882967855,
+    "mae": 0.8739090523823836,
+    "r2": 0.06010015298792115,
+    "fit_time": 0.2421579360961914,
+    "cv_rmse_mean": 2.4088771716436606,
+    "cv_rmse_std": 0.654332096403192,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.8444800366461186
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.023863706904242034
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.021616903694126003
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.020692339615662917
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.015644887533908847
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0150310100259148
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.014950292540522506
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.011233098700353838
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.007049584154605731
+      },
+      {
+        "feature": "dow_cos",
+        "score": 0.0066538047415242866
+      }
+    ]
+  },
+  {
+    "model": "rf_evt_lags",
+    "rmse": 6.355431485909663,
+    "mae": 0.9359623752026681,
+    "r2": 0.057969476804125675,
+    "fit_time": 0.22082209587097168,
+    "cv_rmse_mean": 2.458080024083814,
+    "cv_rmse_std": 0.6473076673613576,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.8868084045753932
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.03785768959380199
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.025507790197924596
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.02226410828933848
+      },
+      {
+        "feature": "miles",
+        "score": 0.008913691822251853
+      },
+      {
+        "feature": "offramp",
+        "score": 0.008625257141313304
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.005458534772408589
+      },
+      {
+        "feature": "curve",
+        "score": 0.0016896911228849387
+      },
+      {
+        "feature": "onramp",
+        "score": 0.0014669285595350961
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.0014079039251479004
+      }
+    ]
+  },
+  {
+    "model": "rf_base_lags",
+    "rmse": 6.35383310315284,
+    "mae": 0.9412299892862386,
+    "r2": 0.05844325612313239,
+    "fit_time": 0.2259831428527832,
+    "cv_rmse_mean": 2.4583614436865355,
+    "cv_rmse_std": 0.6450087390674485,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.8884008422293355
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.039309350156176134
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.02692380209742104
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.02365051392659735
+      },
+      {
+        "feature": "miles",
+        "score": 0.010065335202303903
+      },
+      {
+        "feature": "offramp",
+        "score": 0.00841228958217788
+      },
+      {
+        "feature": "curve",
+        "score": 0.001683675816892339
+      },
+      {
+        "feature": "onramp",
+        "score": 0.001554190989095987
+      }
+    ]
+  },
+  {
+    "model": "xgb_full",
+    "rmse": 6.362723441088905,
+    "mae": 1.0181983420734086,
+    "r2": 0.05580654416639608,
+    "fit_time": 0.2846200466156006,
+    "cv_rmse_mean": 2.4939224080082356,
+    "cv_rmse_std": 0.8869783655394398,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.2944185435771942
+      },
+      {
+        "feature": "dow_cos",
+        "score": 0.14671017229557037
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.13859321177005768
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.08740097284317017
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.05621973052620888
+      },
+      {
+        "feature": "miles",
+        "score": 0.03485982492566109
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.034671466797590256
+      },
+      {
+        "feature": "curve",
+        "score": 0.03002612479031086
+      },
+      {
+        "feature": "offramp",
+        "score": 0.025325194001197815
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.024297375231981277
+      }
+    ]
+  },
+  {
+    "model": "xgb_cyc_lags",
+    "rmse": 6.366539559089787,
+    "mae": 1.0186531550939313,
+    "r2": 0.054673622330858485,
+    "fit_time": 0.3001089096069336,
+    "cv_rmse_mean": 2.5013795950067967,
+    "cv_rmse_std": 0.8813215046714905,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.32374054193496704
+      },
+      {
+        "feature": "dow_cos",
+        "score": 0.2733865976333618
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.09937994182109833
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.04927793890237808
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.042438067495822906
+      },
+      {
+        "feature": "miles",
+        "score": 0.03413017466664314
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.02879491075873375
+      },
+      {
+        "feature": "curve",
+        "score": 0.02754984237253666
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.02585415169596672
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.025198012590408325
+      }
+    ]
+  },
+  {
+    "model": "gbrt_base_lags",
+    "rmse": 6.521536821869681,
+    "mae": 0.9840157196424781,
+    "r2": 0.008084232534026459,
+    "fit_time": 0.6359879970550537,
+    "cv_rmse_mean": 2.5428968048981857,
+    "cv_rmse_std": 0.4817500149681212,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.6877400190093302
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.16075978874387883
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.1277584285009262
+      },
+      {
+        "feature": "miles",
+        "score": 0.015727059217100426
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.004700645564652514
+      },
+      {
+        "feature": "curve",
+        "score": 0.001883179025107233
+      },
+      {
+        "feature": "offramp",
+        "score": 0.000822229491986696
+      },
+      {
+        "feature": "onramp",
+        "score": 0.000608650447017813
+      }
+    ]
+  },
+  {
+    "model": "lasso_full",
+    "rmse": 6.521194131886363,
+    "mae": 0.9681106908764416,
+    "r2": 0.00818847503886544,
+    "fit_time": 0.0067026615142822266,
+    "cv_rmse_mean": 2.5929631570112206,
+    "cv_rmse_std": 0.861098672596038,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.02411771357808468
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.0
+      },
+      {
+        "feature": "onramp",
+        "score": -0.0
+      },
+      {
+        "feature": "curve",
+        "score": -0.0
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0
+      },
+      {
+        "feature": "miles",
+        "score": -0.0
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.0
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.0
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.0
+      },
+      {
+        "feature": "hour_cos",
+        "score": -0.0
+      }
+    ]
+  },
+  {
+    "model": "xgb_base_lags",
+    "rmse": 6.380533335433133,
+    "mae": 1.0660753803685983,
+    "r2": 0.05051336408362295,
+    "fit_time": 0.28095102310180664,
+    "cv_rmse_mean": 2.6107084850079083,
+    "cv_rmse_std": 0.9332968347325238,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.5142573714256287
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.11374709010124207
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.11189336329698563
+      },
+      {
+        "feature": "miles",
+        "score": 0.07698631286621094
+      },
+      {
+        "feature": "offramp",
+        "score": 0.07286769896745682
+      },
+      {
+        "feature": "onramp",
+        "score": 0.04034830629825592
+      },
+      {
+        "feature": "curve",
+        "score": 0.03798100724816322
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.03191881254315376
+      }
+    ]
+  },
+  {
+    "model": "xgb_evt_lags",
+    "rmse": 6.367511553435961,
+    "mae": 1.045548033498381,
+    "r2": 0.05438494995947718,
+    "fit_time": 0.2596158981323242,
+    "cv_rmse_mean": 2.6211354072081576,
+    "cv_rmse_std": 0.9190523887572486,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.48800453543663025
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.10832716524600983
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.10274366289377213
+      },
+      {
+        "feature": "miles",
+        "score": 0.07060778886079788
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.06648074090480804
+      },
+      {
+        "feature": "onramp",
+        "score": 0.04484052211046219
+      },
+      {
+        "feature": "offramp",
+        "score": 0.03859565779566765
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.03296591341495514
+      },
+      {
+        "feature": "curve",
+        "score": 0.03270953893661499
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.014724447391927242
+      }
+    ]
+  },
+  {
+    "model": "rf_cyc",
+    "rmse": 6.5465971766191124,
+    "mae": 0.9952535437454355,
+    "r2": 0.0004463023222371909,
+    "fit_time": 0.20754194259643555,
+    "cv_rmse_mean": 2.6255319267703325,
+    "cv_rmse_std": 1.0649160452159285,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.2006940746599964
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.17965964148695482
+      },
+      {
+        "feature": "miles",
+        "score": 0.17042840662745398
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.13827483475566218
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.0835581304763766
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.07751554773178329
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.07182346242202883
+      },
+      {
+        "feature": "curve",
+        "score": 0.02616607109946579
+      },
+      {
+        "feature": "is_weekend",
+        "score": 0.019347486936226874
+      },
+      {
+        "feature": "offramp",
+        "score": 0.01401087579871257
+      }
+    ]
+  },
+  {
+    "model": "xgb_cyc",
+    "rmse": 6.597467656763471,
+    "mae": 1.1412157747769602,
+    "r2": -0.01514816058653845,
+    "fit_time": 0.29569196701049805,
+    "cv_rmse_mean": 2.626232727082387,
+    "cv_rmse_std": 0.9917006971915685,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "dow_cos",
+        "score": 0.17214839160442352
+      },
+      {
+        "feature": "is_weekend",
+        "score": 0.1230400800704956
+      },
+      {
+        "feature": "curve",
+        "score": 0.1003955826163292
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.09182122349739075
+      },
+      {
+        "feature": "onramp",
+        "score": 0.09049210697412491
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.08789380639791489
+      },
+      {
+        "feature": "miles",
+        "score": 0.07762666791677475
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.06625023484230042
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.06439612060785294
+      },
+      {
+        "feature": "offramp",
+        "score": 0.04364670440554619
+      }
+    ]
+  },
+  {
+    "model": "ridge_full",
+    "rmse": 6.801345856918971,
+    "mae": 0.9812223713777773,
+    "r2": -0.07885880912044851,
+    "fit_time": 0.010879993438720703,
+    "cv_rmse_mean": 2.629685258219631,
+    "cv_rmse_std": 0.7088666754000361,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.03526274420766849
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.007361716069051482
+      },
+      {
+        "feature": "curve",
+        "score": -0.005991126272369219
+      },
+      {
+        "feature": "hour_cos",
+        "score": -0.005684871358328525
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": -0.004806448604907385
+      },
+      {
+        "feature": "dow_cos",
+        "score": -0.004431997447377199
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": -0.0043926624984031585
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.004040793678517711
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": -0.001763013815175582
+      },
+      {
+        "feature": "reference_speed",
+        "score": -0.0013257293118220097
+      }
+    ]
+  },
+  {
+    "model": "lr_full",
+    "rmse": 6.803966838379927,
+    "mae": 0.9821402802493034,
+    "r2": -0.07969047209878366,
+    "fit_time": 0.0072650909423828125,
+    "cv_rmse_mean": 2.6312298495574558,
+    "cv_rmse_std": 0.7098929430284364,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.03532424879679047
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.007612009917159017
+      },
+      {
+        "feature": "curve",
+        "score": -0.006017816234512817
+      },
+      {
+        "feature": "hour_cos",
+        "score": -0.005688464737756908
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": -0.004865157284738384
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": -0.004589850078372164
+      },
+      {
+        "feature": "dow_cos",
+        "score": -0.004516005568402566
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.004190334673282042
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": -0.0017594266663860801
+      },
+      {
+        "feature": "reference_speed",
+        "score": -0.0013553005705525423
+      }
+    ]
+  },
+  {
+    "model": "lr_cyc_lags",
+    "rmse": 6.808604067105662,
+    "mae": 0.9810082813938014,
+    "r2": -0.08116269498529483,
+    "fit_time": 0.007943153381347656,
+    "cv_rmse_mean": 2.631875697061262,
+    "cv_rmse_std": 0.7108814678402253,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.0354187663520971
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.007556652053303106
+      },
+      {
+        "feature": "curve",
+        "score": -0.0060950234621444934
+      },
+      {
+        "feature": "hour_cos",
+        "score": -0.005877324079923448
+      },
+      {
+        "feature": "dow_cos",
+        "score": -0.0056039427286463436
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.005078063309364231
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": -0.004937973755406802
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": -0.004119370586746439
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.0016108699806742634
+      },
+      {
+        "feature": "reference_speed",
+        "score": -0.001299735771982893
+      }
+    ]
+  },
+  {
+    "model": "lr_evt_lags",
+    "rmse": 6.838519892659057,
+    "mae": 0.9630453580198785,
+    "r2": -0.09068445038376405,
+    "fit_time": 0.003638029098510742,
+    "cv_rmse_mean": 2.6414939937836666,
+    "cv_rmse_std": 0.7098219909034885,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.03597017819470998
+      },
+      {
+        "feature": "curve",
+        "score": -0.004616872676989383
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": -0.004246201523522848
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": -0.0020728167019536717
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.001828061525358561
+      },
+      {
+        "feature": "reference_speed",
+        "score": -0.0006171644115299543
+      },
+      {
+        "feature": "offramp",
+        "score": -0.0004553080362418118
+      },
+      {
+        "feature": "onramp",
+        "score": -0.00022583688505361827
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 9.032867231595235e-05
+      },
+      {
+        "feature": "miles",
+        "score": -4.939059544104528e-05
+      }
+    ]
+  },
+  {
+    "model": "lr_base_lags",
+    "rmse": 6.846135428051553,
+    "mae": 0.9665825096583109,
+    "r2": -0.09311502633395641,
+    "fit_time": 0.016847848892211914,
+    "cv_rmse_mean": 2.6439152053358104,
+    "cv_rmse_std": 0.7183785043432722,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.036124537819367745
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": -0.004209234908825945
+      },
+      {
+        "feature": "curve",
+        "score": -0.0038739486109586867
+      },
+      {
+        "feature": "onramp",
+        "score": 0.0005120618359184456
+      },
+      {
+        "feature": "miles",
+        "score": -0.0004959302081845534
+      },
+      {
+        "feature": "offramp",
+        "score": 0.0001577771043830919
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.00014207698590540168
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": -4.898537101637571e-05
+      }
+    ]
+  },
+  {
+    "model": "gbrt_evt_lags",
+    "rmse": 6.508967992132923,
+    "mae": 0.9872130931471693,
+    "r2": 0.011903947677949556,
+    "fit_time": 0.6394600868225098,
+    "cv_rmse_mean": 2.6762627502518628,
+    "cv_rmse_std": 0.36160446819447684,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.6703364491001286
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.1723332783967116
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.1252119209606676
+      },
+      {
+        "feature": "miles",
+        "score": 0.014365812622267006
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.005473594314162336
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.004154196836753743
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.0035010851782689752
+      },
+      {
+        "feature": "curve",
+        "score": 0.0018319749653736262
+      },
+      {
+        "feature": "onramp",
+        "score": 0.0014091087738445638
+      },
+      {
+        "feature": "offramp",
+        "score": 0.0013825788518218257
+      }
+    ]
+  },
+  {
+    "model": "gbrt_cyc",
+    "rmse": 6.813948073846805,
+    "mae": 1.2438152006177037,
+    "r2": -0.08286054908854434,
+    "fit_time": 0.4212827682495117,
+    "cv_rmse_mean": 2.8462535493616823,
+    "cv_rmse_std": 0.8899775810119994,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "reference_speed",
+        "score": 0.3854899329196253
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.17324933354238659
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.15389678430578244
+      },
+      {
+        "feature": "miles",
+        "score": 0.0923395155920323
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.08570361893127745
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.03525492914124767
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.030262613179345227
+      },
+      {
+        "feature": "curve",
+        "score": 0.0164885216653306
+      },
+      {
+        "feature": "offramp",
+        "score": 0.008858139830017774
+      },
+      {
+        "feature": "is_weekend",
+        "score": 0.008385622882943854
+      }
+    ]
+  },
+  {
+    "model": "gbrt_full",
+    "rmse": 6.398119464631221,
+    "mae": 0.8635648920038943,
+    "r2": 0.04527217024043817,
+    "fit_time": 0.8670120239257812,
+    "cv_rmse_mean": 2.8953971257384685,
+    "cv_rmse_std": 0.6407369069525644,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.6914475191797166
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.07550434820190789
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.06686663206094993
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.05388229450698993
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.038820860147724595
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.03358418072109982
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.024710400211233347
+      },
+      {
+        "feature": "curve",
+        "score": 0.0032453961023806966
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0032162854079119062
+      },
+      {
+        "feature": "miles",
+        "score": 0.0031999570808172394
+      }
+    ]
+  },
+  {
+    "model": "gbrt_cyc_lags",
+    "rmse": 6.395567689443242,
+    "mae": 0.8625604350100758,
+    "r2": 0.04603357051539525,
+    "fit_time": 0.8725030422210693,
+    "cv_rmse_mean": 2.9040665674116797,
+    "cv_rmse_std": 0.6128647370457839,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "log_lag1_tt_per_mile",
+        "score": 0.7002804534675847
+      },
+      {
+        "feature": "hour_sin",
+        "score": 0.07822037258104944
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.0674308545543444
+      },
+      {
+        "feature": "log_lag3_tt_per_mile",
+        "score": 0.05320792823392902
+      },
+      {
+        "feature": "log_lag2_tt_per_mile",
+        "score": 0.03548002195719291
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.026190426520112327
+      },
+      {
+        "feature": "hour_cos",
+        "score": 0.024776123037516844
+      },
+      {
+        "feature": "curve",
+        "score": 0.00329240657314357
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0031707498128886215
+      },
+      {
+        "feature": "miles",
+        "score": 0.003097481347364843
+      }
+    ]
+  },
+  {
+    "model": "lr_cyc",
+    "rmse": 6.519202872882008,
+    "mae": 1.1687292796566575,
+    "r2": 0.008794085625468684,
+    "fit_time": 0.025007009506225586,
+    "cv_rmse_mean": 2.9502139464916457,
+    "cv_rmse_std": 1.1916207160266759,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "hour_cos",
+        "score": -0.01254931656738618
+      },
+      {
+        "feature": "curve",
+        "score": -0.011135757959843997
+      },
+      {
+        "feature": "dow_cos",
+        "score": -0.010690325799404515
+      },
+      {
+        "feature": "hour_of_week_cos",
+        "score": 0.008399126608757468
+      },
+      {
+        "feature": "hour_of_week_sin",
+        "score": 0.003848781429198924
+      },
+      {
+        "feature": "offramp",
+        "score": -0.002806816481320066
+      },
+      {
+        "feature": "dow_sin",
+        "score": 0.00184683945269632
+      },
+      {
+        "feature": "hour_sin",
+        "score": -0.001400706422440692
+      },
+      {
+        "feature": "miles",
+        "score": -0.000985212293545065
+      },
+      {
+        "feature": "onramp",
+        "score": 0.0007052671158204915
+      }
+    ]
+  },
+  {
+    "model": "xgb_evt",
+    "rmse": 6.536502653136893,
+    "mae": 1.0844557934832297,
+    "r2": 0.0035264488015976925,
+    "fit_time": 0.24064111709594727,
+    "cv_rmse_mean": 2.9531014179394974,
+    "cv_rmse_std": 1.109440381878936,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "curve",
+        "score": 0.25450578331947327
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.2222263365983963
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.21589887142181396
+      },
+      {
+        "feature": "miles",
+        "score": 0.12485793232917786
+      },
+      {
+        "feature": "offramp",
+        "score": 0.09467412531375885
+      },
+      {
+        "feature": "onramp",
+        "score": 0.04920448362827301
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.038632459938526154
+      }
+    ]
+  },
+  {
+    "model": "rf_evt",
+    "rmse": 6.542540524759578,
+    "mae": 1.0976935932614715,
+    "r2": 0.0016846815746683896,
+    "fit_time": 0.2508871555328369,
+    "cv_rmse_mean": 2.953935350078001,
+    "cv_rmse_std": 1.0988540960722246,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "reference_speed",
+        "score": 0.33177154136917625
+      },
+      {
+        "feature": "miles",
+        "score": 0.26013342032592157
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.1990483487146257
+      },
+      {
+        "feature": "curve",
+        "score": 0.08931056936686815
+      },
+      {
+        "feature": "offramp",
+        "score": 0.05073590856680591
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.03539072595905316
+      },
+      {
+        "feature": "onramp",
+        "score": 0.03360948569754946
+      }
+    ]
+  },
+  {
+    "model": "gbrt_evt",
+    "rmse": 6.543876277965319,
+    "mae": 1.1033336418485034,
+    "r2": 0.00127699926571756,
+    "fit_time": 0.18420195579528809,
+    "cv_rmse_mean": 2.9573673259375894,
+    "cv_rmse_std": 1.0972801870360094,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "reference_speed",
+        "score": 0.3334171006651209
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.25529986724074655
+      },
+      {
+        "feature": "miles",
+        "score": 0.2134384143592466
+      },
+      {
+        "feature": "curve",
+        "score": 0.0995675161896356
+      },
+      {
+        "feature": "offramp",
+        "score": 0.05413635845336909
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": 0.03090601543582855
+      },
+      {
+        "feature": "onramp",
+        "score": 0.013234727656052865
+      }
+    ]
+  },
+  {
+    "model": "xgb_base",
+    "rmse": 6.539962416849456,
+    "mae": 1.1527996564889786,
+    "r2": 0.0024713049084077454,
+    "fit_time": 0.23858928680419922,
+    "cv_rmse_mean": 2.9790002900464945,
+    "cv_rmse_std": 1.1511963318382783,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "curve",
+        "score": 0.4250921308994293
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.2697712182998657
+      },
+      {
+        "feature": "miles",
+        "score": 0.15493203699588776
+      },
+      {
+        "feature": "onramp",
+        "score": 0.09669950604438782
+      },
+      {
+        "feature": "offramp",
+        "score": 0.053505122661590576
+      }
+    ]
+  },
+  {
+    "model": "rf_base",
+    "rmse": 6.540345052453175,
+    "mae": 1.14239902726274,
+    "r2": 0.0023545760540283345,
+    "fit_time": 0.2140491008758545,
+    "cv_rmse_mean": 2.97923548131586,
+    "cv_rmse_std": 1.1490188774482293,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "reference_speed",
+        "score": 0.4327767502687946
+      },
+      {
+        "feature": "miles",
+        "score": 0.3342566552819782
+      },
+      {
+        "feature": "curve",
+        "score": 0.12090457588666173
+      },
+      {
+        "feature": "offramp",
+        "score": 0.06279816639898524
+      },
+      {
+        "feature": "onramp",
+        "score": 0.049263852163580236
+      }
+    ]
+  },
+  {
+    "model": "gbrt_base",
+    "rmse": 6.54101859952714,
+    "mae": 1.1444727792404554,
+    "r2": 0.002149083606400315,
+    "fit_time": 0.1607532501220703,
+    "cv_rmse_mean": 2.9794102227922763,
+    "cv_rmse_std": 1.1493440854364068,
+    "top_features_kind": "tree_importance",
+    "top_features": [
+      {
+        "feature": "reference_speed",
+        "score": 0.40502989613810736
+      },
+      {
+        "feature": "miles",
+        "score": 0.36126079264224514
+      },
+      {
+        "feature": "curve",
+        "score": 0.13856564777184724
+      },
+      {
+        "feature": "offramp",
+        "score": 0.06023684233296518
+      },
+      {
+        "feature": "onramp",
+        "score": 0.03490682111483506
+      }
+    ]
+  },
+  {
+    "model": "lr_evt",
+    "rmse": 6.534997668520143,
+    "mae": 1.1655460654279532,
+    "r2": 0.003985258290384763,
+    "fit_time": 0.009727954864501953,
+    "cv_rmse_mean": 3.0306448449492045,
+    "cv_rmse_std": 1.1863076654752231,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "curve",
+        "score": -0.009736516309670767
+      },
+      {
+        "feature": "evt_cat_planned",
+        "score": 0.004168076444915567
+      },
+      {
+        "feature": "offramp",
+        "score": -0.0027573694486677063
+      },
+      {
+        "feature": "miles",
+        "score": -0.0016556909533996288
+      },
+      {
+        "feature": "evt_cat_unplanned",
+        "score": -0.0015397043515167504
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0005188083869141476
+      },
+      {
+        "feature": "onramp",
+        "score": 5.238571381601027e-05
+      }
+    ]
+  },
+  {
+    "model": "lr_base",
+    "rmse": 6.5327542960926825,
+    "mae": 1.1888793976017202,
+    "r2": 0.00466897650965159,
+    "fit_time": 2.35852313041687,
+    "cv_rmse_mean": 3.037306346278342,
+    "cv_rmse_std": 1.190174404134992,
+    "top_features_kind": "coef_abs",
+    "top_features": [
+      {
+        "feature": "curve",
+        "score": -0.008053447676277734
+      },
+      {
+        "feature": "miles",
+        "score": -0.002086230694962981
+      },
+      {
+        "feature": "reference_speed",
+        "score": 0.0020197213667458224
+      },
+      {
+        "feature": "offramp",
+        "score": -0.0016653244278172848
+      },
+      {
+        "feature": "onramp",
+        "score": 0.0014878748274650278
+      }
+    ]
+  }
+]

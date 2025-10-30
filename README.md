@@ -1,202 +1,203 @@
-# Traffic Prediction on I-10 in Phoenix, AZ
+# WorkZoneWatch: Predict Traffic Delay Impact from Roadwork on I-10 in Phoenix, AZ
 
-Author: Yanbing Wang
+Team members: [Yanbing Wang](https://github.com/yanb514)
 
-The goal of this project is to predict the travel time on I-10 given historical traffic data and (near) real-time work zone schedules and incident information.
 
-### Questions
-- How to predict short-term (30 sec to 5 min) traffic (speed on each road segment) on a freeway corridor, given historical traffic speed data?
-- How do planned (e.g., work zones) and unplanned (e.g., crashes) events affect short-term traffic delay? 
-- Does integrating these events improve short-term traffic prediction accuracy?
+## Table of Content
+- [Introduction](#introduction)
+- [Dataset Generation](#dataset-generation)
+- [Exploratory Data Analysis](#exploratory-data-analysis)
+- [Modeling Approach](#modeling-approach)
+- [Results](#results)
+- [Future Work](#future-work)
+- [Quick Start](#quick-start)
+- [Description of Repository](#description-of-repository)
 
-#### Study Area: I-10 Broadway Curve: 11-mile stretch between Loop 202 and I-17
+### Introduction
+Phoenix’s Interstate 10 Broadway Curve is one of Arizona’s busiest freeway corridors, and its 11-mile segment recently underwent a four-year [reconstruction project](https://azdot.gov/i-10-broadway-curve-project) involving major lane closures between Loop 202 and I-17. *WorkZoneWatch* aims to quantify and predict the short-term delay impacts of planned roadwork and unplanned incidents along this corridor to support ADOT’s construction scheduling and traffic management decisions. Using INRIX historical speed data and AZ511 work zone and incident reports, we built an augmented dataset incorporating road geometry, traffic periodicity, and lagged travel-time features, and tested a suite of models to predict segment-level travel times. A counterfactual analysis was then performed by removing event-influenced data and event-related features to estimate “no-event” conditions, which serve as a baseline for quantifying delay caused by roadwork. Results show that planned events induce measurable but lagged delays—up to 15 seconds per mile (~3 minutes across the 11-mile segment)—roughly double routine congestion levels. Delays are most disruptive during weekday early afternoons and weekend mornings. These findings highlight opportunities to optimize work-zone scheduling and underscore the need for more complete and timely event reporting.
 
-![Work Zone Dashboard](images/i10_broadway_curve.png)
-*Matched events to the nearest TMC segment per direction*
+![i10](images/map-broadway-curve-051122.jpg)
+*Study Area: I-10 Broadway Curve: 11-mile stretch between Loop 202 and I-17 (source: ADOT)*
 
-## Model Choices
+## Dataset Generation
+
+Our dataset integrates **AZ511 event reports** and **INRIX historical traffic speed data** to quantify the delay impact of roadwork on the I-10 Broadway Curve corridor. These two datasets are combined through spatial and temporal matching to produce a unified, segment-level time series of traffic and event activity.
+
+- [AZ511 Events Report](https://az511.com/api/wzdx):The AZ511 Traveler Information Platform provides event-based data on scheduled work zones and unplanned incidents across Arizona through the WZDx API. Since June 2025, we have developed and maintained an automated data pipeline that collects 48,109 event records every three hours via API requests and stores them in a local SQLite database for ongoing analysis. Each record includes attributes such as location, direction, timing, and severity following the WZDx specification. To integrate this information with traffic data, we performed geolocation by mapping 474 events on I-10 using their latitude–longitude coordinates to the nearest INRIX Traffic Messaging Center (TMC) segments in both travel directions, creating a spatially aligned event dataset for the I-10 Broadway Curve corridor.
+
+- [INRIX Historic Traffic Speed Data](https://inrix.com/products/ai-traffic/): INRIX provides minute-level observations of vehicle speed, free-flow speed, and travel time for individual TMC segments derived from floating-car GPS data. The dataset spans September 2024–October 2025 and covers 50 TMC segments along I-10. Missing observations were interpolated using temporal smoothing, and duplicate segments were removed. The time range was aligned with AZ511 event records (June–October 2025). Both event and speed data were then synchronized and aggregated into uniform one-hour intervals. This data is accessed through a paid license.
+
+The final dataset forms a 3D tensor with dimensions (50 TMC segments × 2,374 time bins × 20 features). Augmented features include road geometry (segment length, ramps, curvature), cyclic time variables (hour of day and day of week), lagged travel time, and synchronized planned and unplanned events with their subtypes and durations. The dataset is highly imbalanced, with only 0.87% of {tmc, time_bin} entries containing any event information. The enriched hourly dataset is stored at `/database/i10-broadway/X_full_1h.parquet`, and the segment-level travel time can be visualized below.
+
+![true](images/heatmap_truth_WB.png)
+*Travel time heatmap by segments on Westbound I-10 Broadway Curve from June-October 2025.*
+
+## Exploratory Data Analysis
+Our exploratory analysis confirms the reliability of INRIX traffic data, but found some reporting issues with the AZ511 event data. Feature importance analysis is also attached.
+
+![match_events](images/i10_broadway_tmc.png)
+*Spatial matching of AZ511 events to TMC segments along the I-10 Broadway Curve. Each color represents a unique TMC segment.*
+
+#### Traffic pattern
+ We see no major issue with INRIX data. Traffic patterns are clear: Weekday traffic shows morning and afternoon slowdowns corresponding to commuter peaks, while weekends maintain consistently higher speeds throughout the day. Seasonally, average speeds are lower during the winter months (due to increased travel demand from seasonal visitors) and higher during the summer, when overall traffic volumes are lighter.
+
+![traffic-speed-1yr](images/speed_1y.png)
+*Daily average traffic speed along the I-10 Broadway Curve over one year.*
+
+![traffic-speed-heatmap](images/speed_dow.png)
+*Average traffic speed (mph) by hour and day of week along the I-10 Broadway Curve.*
+
+#### Event reporting issue
+Upon reviewing AZ511 event records, we found that updates appear to occur in batch intervals of ~3 hours, and unplanned events are significantly underreported. Several crashes reported in local news were missing from AZ511, which suggests gaps in real-time data capture.
+
+![evt-heatmap](images/reported_accidents_dow.png)
+*Count of all events aggregated by day of week and hour of day*
+
+While some event descriptions contain detailed narratives, the EventSubType field is inconsistently defined, with vague or nonstandard entries (e.g., C34Rshoulder instead of “Crash on right shoulder,” and undefined codes such as T1018). Furthermore, the Severity field is missing in roughly 90% of records, limiting its usefulness for feature engineering. To ensure analytical consistency, we manually reclassified events into two categories—planned (e.g., work zones, closures) and unplanned (e.g., crashes, incidents)—based on their subtype descriptions.
+
+![evt-heatmap](images/severityxeventsubtype.png)
+
+*Distribution of events by subtype and reported severity*
+
+#### Feature Importance
+In addition, we explored feature importance by fitting an XGBoost model (see [Modeling Approach](#modeling-approach)). Result show that lagged travel-time (up to 3 hours) feature dominates model performance, while event-related features contribute the least, which can be another evidence that event reporting may not be in sync with the resulting traffic patterns. The ranking below is based on feature significance (p-values).
+![fi](images/xgb_full_feature_importance_nested_pie.png)
+*Feature importance identified by XGBoost*
+
+
+## Modeling Approach
+We trained two classes of models based on their treatment of spatial and temporal dependencies. Tabular regression models—including Linear Regression and Tree-Based models—were trained on independent {tmc, time_bin} entries without explicit spatial or temporal structure. In contrast, sequence models such as Long Short-Term Memory (LSTM) and Graph Convolutional Network LSTM (GCN-LSTM) were designed to capture temporal continuity and, in the case of GCN-LSTM, spatial correlations between connected TMC segments. We then compare the traditional regression baselines with the deep learning models.
+
+The best-performing model and feature combination were selected to conduct a counterfactual analysis, enabling estimation of event-induced delay in the absence of a direct control group (i.e., no-event conditions). Specifically, the control scenario was modeled by removing all data within ±3 hours of reported event times and excluding event-related and lag features that could be influenced by those events. Because this process disrupts temporal continuity, sequence models were not used, as they require complete, continuous time-series data for training.
+
 ### Model Overview
-| Model Family | Description | Training Data
-|----------|-------------|-------------|
-| **Linear Regression** | Ordinary Least Squares (OLS), Ridge and Lasso. Assume linear relationships between events, time features, and travel time. No interaction terms. No spatial or temporal dependency.| Event-balanced data points[^1] |
-| **Tree-Based Models** | Random Forest, Gradient Boosted Trees and XGBoost. Captures nonlinearities and interactions, No spatial or temporal dependency.|Event-balanced data points[^1] |
-| **SARIMAX Models** | Seasonal ARIMA with Exogenous Regressors. Models serial dependence and seasonality directly, trained independently for each TMC. Computationally heavy. Consider temporal but no spatial dependency. | Full time-series for each TMC |
-| **LSTM** | A recurrent neural network for time-series prediction. A global (pooled) model trained on all TMC time-series sliced into short 24-hr sequences. Consider temporal but no spatial dependency.| Sliced short sequences across all TMCs |
+|Model Class| Model Family | Description | Training Data
+|----|----------|-------------|-------------|
+|Tabular regression models | **Linear Regression** | Ordinary Least Squares (OLS), Ridge and Lasso. Assume linear relationships between events, time features, and travel time. No interaction terms. No spatial or temporal dependency.| Event-balanced data points[^1] |
+|Tabular regression models | **Tree-Based Models** | Random Forest (rf), Gradient Boosted Regression Trees (gbrf) and XGBoost. Captures nonlinearities and interactions, No spatial or temporal dependency.|Event-balanced data points[^1] |
+|Sequence models | **LSTM** | A recurrent neural network for time-series prediction. A global (pooled) model trained on all TMC time-series sliced into short 24-hr sequences. Consider temporal but no spatial dependency.| Sliced short sequences across all TMCs |
+|Sequence models| **GCN-LSTM** | A spatial-temporal graph neural network (ST-GNN) model. GCN captures spatial dependencies between conneted TMCs, and LSTM learns temporal dynamics| Sliced short sequences across all TMCs |
+<!-- | **SARIMAX Models** | Seasonal ARIMA with Exogenous Regressors. Models serial dependence and seasonality directly, trained independently for each TMC. Computationally heavy. Consider temporal but no spatial dependency. | Full time-series for each TMC | -->
 
 [^1]: The training data is a multi-index DataFrame with indices {tmc, time_bin}, where events are counted at each entry. Since events occur in less than 1% of 1-hr time bins, we downsample non-event entries to achieve approximately 50% event balance in the training data.
 
-### Regressor (Features) Selection
-| Features | Description | Applies To |
-|----------|-------------|-------------|
-| **Base**  `(miles, on/off ramps, curve)`| Static features related to road geometry each TMC | Linear, Tree, SARIMAX(exog)|
-| **Events (evt)**  `(evt_cat_planned, evt_cat_unplanned)`| Counts or presence of planned events (closures, roadwork, etc.) and unplanned events (crashes, debris, accidents etc.)|Linear, Tree, SARIMAX(exog)|
-|**Cyclic time (cyc)** `(hour_sin, hour_cos, dow_sin, dow_cos, hour_of_week_sin, hour_of_week_cos, is_weekend)`|Encodes daily & weekly periodicity| Linear, Tree, SARIMAX(exog)|
-|**Lags (lags)** `(travel_time_t-1, t-2,...)`|Captures short-term persistence|All models except for SARIMAX|
-|**Seasonality** `(P,D,Q,s)`|Explicit periodic autocorrelation|SARIMAX only|
+### Feature choices
+| Features | Description | 
+|----------|-------------|
+| **Road**  `(miles, on/off ramps, curve)`| Static features related to road geometry each TMC. Some are manually tagged from Google Satellite View |
+| **Events (evt)**  `(evt_cat_planned, evt_cat_unplanned)`| Counts or presence of planned events (closures, roadwork, etc.) and unplanned events (crashes, debris, accidents etc.)|
+|**Cyclic time (cyc)** `(hour_sin, hour_cos, dow_sin, dow_cos, hour_of_week_sin, hour_of_week_cos, is_weekend)`|Encodes daily & weekly periodicity|
+|**Lagged travel time (lag)** `(travel_time_t-1, t-2,...)`|Captures short-term persistence|
+<!-- |**Seasonality** `(P,D,Q,s)`|Explicit periodic autocorrelation|SARIMAX only| -->
+
+For each model family in Tabular models, various regressor combinations were tested. The configurations include:
+1. road features only
+2. road + evt
+3. road + evt + lag 
+4. road + lag 
+5. road + cyc
+6. road + cyc + lag
+7. full features: road + cyc + evt + lag
 
 
-## Training Results
-For each model family, various regressor combinations were tested. The configurations include:
-1. base features only
-2. base + evt
-3. base + evt + lag 
-4. base + lag 
-5. base + cyc
-6. base + cyc + lag
-7. full features: base + cyc + evt + lag
 
-The following shows the model prediction results using "full" features for each model family.
-![true](images/travel-time-heatmap-true.png)
-*True travel time heatmap*
+## Results
 
-![lr](images/heatmap-ridge-full.png)
-*Linear Regression (Ridge) with full features*
+### Model training results
+![true](images/tabular_models_cv_rmse.png)
 
-![gbrt](images/heatmap-gbrt-full.png)
-*Gradient boosted tree with full features*
+*Quick model comparison by CV RMSE*: adding "lag" feature improved the accuracy for all models; "XGBoost" is the overall best model.
 
-![xgb](images/heatmap-xgb-full.png)
+![true](images/full_feature_models_cv_rmse.png)
+
+*Full-feature model comparison by test RMSE*: LSTM has the best prediction accuracy, followed by XGBoost.
+
+The following travel-time heatmaps visualize the model prediction results using "full" features for XGBoost and LSTM.
+<!-- ![true](images/heatmap_truth_WB.png)
+*True travel time heatmap* -->
+
+<!-- ![lr](images/heatmap_lr_full_WB.png)
+*Linear Regression with full features*
+
+![gbrt](images/heatmap_gbrt_full_WB.png)
+*Gradient boosted tree with full features* -->
+
+![xgb](images/heatmap_xgb_full_WB.png)
 *XGBoost model with full features*
 
-<!-- ![lstm](images/lstm_full.png)
-*LSTM model with full features* -->
+![lstm](images_old/heatmap-lstm-full.png)
+*LSTM model with full features*
 
 <!-- ![sarimax](images/sarimax_full.png)
 *SARIMAX model with full features* -->
 
-![gcn](images/heatmap-gcn-full.png)
-*GCN-LSTM predicted travel time heatmap*
-
-
+<!-- ![gcn](images/heatmap_gcn_WB.png)
+*GCN-LSTM predicted travel time heatmap* -->
 
 
 
 **! Important Note:** All models are trained to make one-shot prediction, i.e., given current or some lagged states, predict the travel time in the next time_bin. They are not designed for multi-step or recursive forecasting.
 
-## Feature Importance
-Preliminary and quantitative analyses show that lagged travel-time and cyclical time (hour/day) features dominate model performance, while event-related features contribute less. The ranking below is based on feature significance (p-values).
 
-#### The top 10 important features for LR models are:
-|feature	|coef	|p_value	|t_stat|
-|-------|--------|---------|---------|
-|log_lag1_tt_per_mile	|3.444037	|1.056173e-92	|21.773481|
-|log_lag2_tt_per_mile	|-1.232298	|4.372261e-10	|-6.277715|
-|hour_cos	|-0.566244	|4.455911e-06	|-4.604132|
-|curve	|0.425215	|4.697505e-03	|2.830896|
-|reference_speed	|0.282690|6.401187e-02	|1.853329|
-|onramp|	-0.317958	|9.896550e-02	|-1.650812|
-|log_lag3_tt_per_mile	|0.253012	|1.310296e-01	|1.510798|
-|hour_sin	|0.159311	|2.472554e-01|	1.157448|
-|is_weekend	|-0.170429	|3.894714e-01	|-0.860801|
-|evt_cat_unplanned	|0.107559	|3.956972e-01	|0.849550|
+### Event-induced delay
+Event-induced delay was estimated using a counterfactual prediction model trained with XGBoost excluding all event-related data and features, allowing isolation of delay attributable to work zones and incidents. The analysis focused on planned events (e.g., roadwork), as they are typically longer in duration and less affected by underreporting.
 
+The additional delay was computed as the difference between travel times predicted by the full model and the counterfactual “no-event” model. Results indicate that event-related delays peak during early afternoons (12–3 PM) on weekdays and in the mornings on weekends. While weekend or overnight closures—common DOT mitigation strategies—help reduce congestion, our findings show that these measures reduce but do not eliminate delays, particularly on weekends.
 
+![delay-how](images/extra_delay_by_hour.png)
 
-#### Random Forest
+![delay-how](images/extra_delay_heatmap_dow_hour.png)
 
-|feature |	importance |
-|-------|-------------|
-|log_lag1_tt_per_mile	|0.598673|
-|log_lag2_tt_per_mile	|0.167083|
-|log_lag3_tt_per_mile	|0.118422|
-|hour_cos	|0.026258|
-|miles	|0.021463|
-|hour_of_week_sin	|0.016678|
-|hour_of_week_cos	|0.013536|
-|hour_sin	|0.010765|
-|dow_sin	|0.006311|
-|reference_speed	|0.004457|
+Further analysis reveals that planned work zones cause prolonged, lagged effects, with delays peaking 3–5 hours after work begins and reaching up to 15 sec/mile (2-3min extra delay on the 11-mile corridor), which doubles the typical daily congestion delay.
 
-#### Gradient boosted regression trees (GBRT)
-|feature |	importance |
-|-------|-------------|
-|log_lag1_tt_per_mile	|0.584466|
-|log_lag3_tt_per_mile	|0.091125|
-|hour_cos	|0.054218|
-|log_lag2_tt_per_mile	|0.039154|
-|hour_of_week_sin	|0.033247|
-|hour_sin	|0.019954|
-|reference_speed		|0.012360|
-|hour_of_week_cos	|0.011678|
-|miles		|0.008140|
-|evt_cat_unplanned	|0.004216|
+![delay-how](images/diff_by_event_type_boxplot.png)
 
+![delay-how](images/corr_evt_delay.png)
 
-#### XGBoost:
-|feature |	importance |
-|-------|-------------|
-log_lag1_tt_per_mile	|0.302974
-log_lag2_tt_per_mile	|0.146063
-hour_cos	|0.080227
-reference_speed	|0.063320
-offramp	|0.060669
-log_lag3_tt_per_mile	|0.056196
-evt_cat_planned	|0.047618
-dow_sin	|0.046490
-hour_of_week_sin	|0.044603
-hour_sin	|0.040173
+These results are consistent with ADOT’s observations that off-peak closures lessen congestion but cannot eliminate it entirely. The observed lagged and residual delays also underscore the need for more complete and timely event reporting to improve predictive accuracy and mitigation planning.
 
+## Future Work
+1. Integrate real-time incident feeds to address underreported and delayed event updates, such as  exploring connected vehicle data or roadside sensor information (e.g., CCTV camera).
+2. Expand the feature context by incorporating weather conditions and detailed event descriptions.
+3. Explore causal inference methods to rigorously estimate the delay impact attributable to multiple interacting factors such as work zones, demand fluctuations, and incidents.
 
+## Quick Start
+Before running the following commands, make sure to follow the project structure specified in [Description of Repository](#description-of-repository), and have 
+- `az511.db` stored in `database/`, and
+- raw INRIX data stored as `database/inrix-traffic-speed/I10-and-I17-1year/`
 
----
-## Data Collection and Preprocessing
+Run the entire pipeline end-to-end using the following commands:
 
-### Work Zone Data Exchange (WZDx) from AZ511  (`database/az511.db`)
-Source: The AZ511 Traveler Information Platform provides event-based information on scheduled work zone activities and reported incidents within Arizona. It is continuously updated and accessible through the WZDx API at https://az511.com/api/wzdx. The dataset follows the WZDx Specification, which defines a standardized format for representing work zone data using GeoJSON documents. These documents describe attributes such as the location, status, and timing of work zones, as well as related elements like detours and field devices.
+```bash
+# 1) Prepare dataset (events + INRIX -> parquet)
+#    Output: database/i10-broadway/X_full_1h.parquet
+#    - Final feature table with MultiIndex {tmc, time_bin}
+python prepare_i10_training_data.py
 
-Acquisition: This data is freely available with a free API key requested from AZ511. Since June 2025, data has been collected using a Python script scheduled via scrontab to run every 3 hours. The script sends API requests to retrieve the latest data and stores the responses in a local SQLite database (`database/az511.db`) for ongoing analysis. An example of an event data entry is the following:
-```python
-{
-    "ID": 541822,
-    "SourceId": "333416",
-    "Organization": "ERS",
-    "RoadwayName": "US-60",
-    "DirectionOfTravel": "West",
-    "Description": "Road closed due to flooding on US-60 Westbound  near   N Reppy Ave (MP 244)   ",
-    "Reported": 1760298060,
-    "LastUpdated": 1760372518,
-    "StartDate": 1760298060,
-    "PlannedEndDate": null,
-    "LanesAffected": "No Data",
-    "Latitude": 33.3958970525985,
-    "Longitude": -110.87480008516,
-    "LatitudeSecondary": null,
-    "LongitudeSecondary": null,
-    "EventType": "accidentsAndIncidents",
-    "EventSubType": "roadFlooding",
-    "IsFullClosure": false,
-    "Severity": "Major",
-    "EncodedPolyline": null,
-    "Restrictions": {
-      "Width": null,
-      "Height": null,
-      "Length": null,
-      "Weight": null,
-      "Speed": null
-    },
-    "DetourPolyline": "",
-    "DetourInstructions": "",
-    "Recurrence": "",
-    "RecurrenceSchedules": "",
-    "Details": "Detour South of Globe: SR-77 South to SR-177 North back onto US-60 West. \nDetour North of Globe:  SR-188 North to SR-87 South back to Phx Metro area.",
-    "LaneCount": 1
-  }
+# 2) Train tabular baseline models (Linear/Ridge/Lasso, RF/GBRT, XGBoost)
+#    Output: models/tabular_run/
+python train_model_tabular.py --save-models
+
+# 3) Train sequence model (LSTM)
+#    Output: models/lstm_run/
+python train_model_lstm.py --save-models
+
+# 4) Train spatial-temporal model (GCN + LSTM)
+#    Output: models/gcn/gcn_lstm_i10_wb/
+python train_model_stgnn.py
+
+# 5) Compare model performance and generate evaluation figures
+#    Output: images/
+python model_comparison.py --direction WB --save-figs
+
+# 6) Run counterfactual analysis to estimate delay impact of planned events
+#    Output: images/
+python evt_impact_analysis.py
 ```
 
-### INRIX Historic Traffic Speed Data (`database/inrix-traffic-speed/`)
-Source: INRIX provides traffic speed observations for selected road segments and can be accessed through a licensed agreement. It is a real‑time feed accessible via RESTful API endpoints that provides observed speeds and travel times for individual road segments specified by Traffic Messaging Center (TMC). The collection of speed and travel time data relies primarily on Floating Car Data (FCD) from a large number of connected devices (e.g. vehicles with GPS, in‑dash systems, mobile apps). The data is aggregated every minute for each road segment, and is reported as speed, free‑flow speed (i.e. speed under minimal traffic), as well as confidence indicators and travel times.  
-```
-Sample of the dataset (first 5 rows):
-tmc_code	measurement_tstamp	speed	historical_average_speed	reference_speed	travel_time_seconds	confidence_score	cvalue	Inrix 2013	Inrix 2019
-0	115+04387	2024-09-24 00:00:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
-1	115+04387	2024-09-24 00:01:00	52.0	49.0	49.0	10.77	30.0	100.0	2	6
-2	115+04387	2024-09-24 00:02:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
-3	115+04387	2024-09-24 00:03:00	51.0	49.0	49.0	10.98	30.0	100.0	2	6
-4	115+04387	2024-09-24 00:04:00	51.0	49.0	49.0	10.9
-```
-The downloaded data covers Interstate I‑17 and I‑10, SR60, and Loop 101 in the Phoenix, Tempe, Chandler, Mesa, and Gilbert areas. It also covers all major arterials in Tempe. The time range spans from September 24, 2024, to September 23, 2025.
 
-## Data Dashboard
+
+<!-- ## Data Dashboard
 
 ![Work Zone Dashboard](images/workzone.png)
 *Interactive map showing AZ511 work zones and traffic data across Arizona*
@@ -244,15 +245,15 @@ Dashboard Features:
   - Update vs start date patterns
 
 ![Analytics Dashboard](images/analytics.png)
-*Comprehensive analytics including event distributions, duration analysis, and temporal patterns*
+*Comprehensive analytics including event distributions, duration analysis, and temporal patterns* -->
 
-## Project Structure
+## Description of Repository
+The project repository is organized as follows. 
 ```
 wzdx/
 ├── environment.yml              # Conda environment specification
 ├── requirements.txt             # Python dependencies (pip)
 ├── run_az511.sh                 # Shell script to run AZ511 job
-├── start.sh                     # Convenience startup script
 ├── README.md                    # Project documentation
 ├── _log/                        # Logs from data collection
 │   └── az511_28538440.err
@@ -263,30 +264,64 @@ wzdx/
 │   └── __pycache__/             # Bytecode cache
 ├── database/                    # Data files, scripts, and assets
 │   ├── az511.py                 # AZ511 data collection script
+│   ├── az511.db                 # AZ511 data
 │   ├── wzdx.py                  # Work zone data processing script
-│   ├── i10-broadway/            # Training data preparation on I-10 broadway curve
+│   ├── i10-broadway/            # Processed training data
 │   │   ├── X_tensor_1h.npz
-│   │   └── X_tensor_5min.npz
-│   └── inrix-traffic-speed/
+│   └── inrix-traffic-speed/     # Raw data from INRIX (not shared)
 │       └── I10-and-I17-1year/
 │           ├── Contents.txt
 │           ├── I10-and-I17-1year.csv
 │           └── TMC_Identification.csv
 ├── images/                      # Figures for README and dashboards
 ├── models/                      # Model training output
-└── notebooks/                   # EDA and adhoc scripts
-  ├── eda_i10.ipynb
-  ├── eda_inrix.ipynb
-  ├── eda_wzdx.ipynb
-  ├── i10_lstm.ipynb
-  ├── i10_model_comparison.ipynb
-  ├── i10_sarimax.py
-  ├── i10_train_lr_tree.ipynb
-  ├── i10_train_time_series.ipynb
-  └── i10_training_data.ipynb
+│   └── gcn/                     # Training results for GCN-LSTM
+│   └── lstm_run/                # Training results for LSTM
+│   └── tabular_run/             # Training results for LR and Tree-based models using tabular data
+├── notebooks/                   # EDA and adhoc scripts
+├── src/                         # Generic helper utilities
+├── evt_impact_analysis.py       # Script to 
+├── model_comparison.py          # Script to
+├── prepare_i10_training_data.py # Script to prepare the dataset (events + INRIX -> parquet)
+├── train_model_lstm.py          # Script to train LSTM
+├── train_model_stgnn.py         # Script to train ST‑GNN
+└── train_model_tabular.py       # Script to train tabular baselines (Linear/Ridge/Lasso, RF/GBRT, XGBoost)
 ```
 
+<!-- ## Data Access
+
+This project uses a combination of proprietary and public datasets:
+
+- **INRIX data** — Licensed and proprietary. The raw data cannot be shared due to contractual restrictions.  
+  However, **processed and aggregated training data** (e.g., anonymized feature tables, model inputs, or summary statistics) can be shared upon reasonable request.  
+
+- **AZ511 data** — Publicly available through the [Arizona Department of Transportation (ADOT) 511 API](https://www.az511.com/).  
+  You can access it directly by registering for an API key or using their open endpoints.
+
+Processed datasets and derived features included in this repository are shared under the same license as the code (MIT), unless otherwise noted.
+
+For questions or data-sharing inquiries, please contact
+**Yanbing Wang**  -->
 
 ## License
-
 MIT License
+
+Copyright (c) 2025 Yanbing Wang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
