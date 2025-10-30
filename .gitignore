@@ -93,3 +93,27 @@ dmypy.json
 database/i10-broadway/inrix.csv
 database/
 database/
+# local databases
+database/
+*.db
+*.sqlite
+*.sqlite3
+
+# model artifacts
+models/
+*.npz
+*.keras
+*.h5
+*.pt
+*.pth
+*.ckpt
+
+# python junk
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# nested clone we don't want
+fall-2025-traffic-prediction/
